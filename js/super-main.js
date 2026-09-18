@@ -273,36 +273,34 @@ function buildBoardDom(board) {
     const rightCell = `${r},${c + 1}`;
     const lineKeyRight = `v${r},${c + 1}`;
     if (!drawnLines.has(lineKeyRight)) {
-      if (cellPositions.has(rightCell) || !cellPositions.has(`${r},${c - 1}`)) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(c + 1));
-        line.setAttribute('y1', String(r));
-        line.setAttribute('x2', String(c + 1));
-        line.setAttribute('y2', String(r + 1));
-        const isBoundary = (c + 1) % 3 === 0 || !cellPositions.has(rightCell);
-        line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
-        line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
-        gridSvg.appendChild(line);
-        drawnLines.add(lineKeyRight);
-      }
+      const hasRightNeighbor = cellPositions.has(rightCell);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(c + 1));
+      line.setAttribute('y1', String(r));
+      line.setAttribute('x2', String(c + 1));
+      line.setAttribute('y2', String(r + 1));
+      const isBoundary = !hasRightNeighbor || (c + 1) % 3 === 0;
+      line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+      line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+      gridSvg.appendChild(line);
+      drawnLines.add(lineKeyRight);
     }
 
     // Bottom edge: draw line between this cell and next, or outer border if no neighbor
     const bottomCell = `${r + 1},${c}`;
     const lineKeyBottom = `h${r + 1},${c}`;
     if (!drawnLines.has(lineKeyBottom)) {
-      if (cellPositions.has(bottomCell) || !cellPositions.has(`${r - 1},${c}`)) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(c));
-        line.setAttribute('y1', String(r + 1));
-        line.setAttribute('x2', String(c + 1));
-        line.setAttribute('y2', String(r + 1));
-        const isBoundary = (r + 1) % 3 === 0 || !cellPositions.has(bottomCell);
-        line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
-        line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
-        gridSvg.appendChild(line);
-        drawnLines.add(lineKeyBottom);
-      }
+      const hasBottomNeighbor = cellPositions.has(bottomCell);
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(c));
+      line.setAttribute('y1', String(r + 1));
+      line.setAttribute('x2', String(c + 1));
+      line.setAttribute('y2', String(r + 1));
+      const isBoundary = !hasBottomNeighbor || (r + 1) % 3 === 0;
+      line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+      line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+      gridSvg.appendChild(line);
+      drawnLines.add(lineKeyBottom);
     }
 
     // Outer edges: draw borders on perimeter
