@@ -147,14 +147,17 @@ function computeBorders(board) {
   const borders = Array.from({ length: count }, () => ({ top: false, right: false, bottom: false, left: false }));
   for (let g = 0; g < count; g++) {
     const [r, c] = board.cellCoords[g];
-    // Only right/bottom are derived from box-sameness; left/top only ever
-    // mark a true outer edge (no cell at all on that side) — the box-boundary
-    // case is already captured symmetrically by the neighbor's own right/
-    // bottom, and marking it again here would double the line's thickness.
-    borders[g].right = isBoundary(g, coordIndex.get(`${r},${c + 1}`));
-    borders[g].bottom = isBoundary(g, coordIndex.get(`${r + 1},${c}`));
-    borders[g].left = coordIndex.get(`${r},${c - 1}`) === undefined;
-    borders[g].top = coordIndex.get(`${r - 1},${c}`) === undefined;
+    // Only draw borders between cells that actually exist, never into empty space
+    // Right/bottom check if there's a boundary OR a neighboring cell
+    const rightNeighbor = coordIndex.get(`${r},${c + 1}`);
+    borders[g].right = rightNeighbor !== undefined && isBoundary(g, rightNeighbor);
+
+    const bottomNeighbor = coordIndex.get(`${r + 1},${c}`);
+    borders[g].bottom = bottomNeighbor !== undefined && isBoundary(g, bottomNeighbor);
+
+    // Left/top: only mark if there's actually a neighbor (never outer edge)
+    borders[g].left = false;
+    borders[g].top = false;
   }
   return borders;
 }
