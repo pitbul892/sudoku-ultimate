@@ -54,6 +54,22 @@ body {
   letter-spacing: 0.02em;
 }
 
+.title-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nav-link {
+  font-size: 0.72rem;
+  color: var(--accent-2);
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  text-decoration: underline;
+}
+
 .stats {
   display: flex;
   gap: 14px;
@@ -206,7 +222,7 @@ body {
 }
 
 .cell.dimmed {
-  background: var(--dimmed);
+  filter: brightness(0.35) saturate(0.6);
 }
 
 .cell.lens-source {
