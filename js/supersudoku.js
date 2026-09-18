@@ -103,20 +103,38 @@ const SEED_CELLS = [
   [7, 1], [7, 4], [7, 7],
 ];
 
-function tryGenerateJigsaw() {
+// `lockedBoxIds` (0-8, row-major) are pinned to their plain 3x3 shape instead
+// of being grown/scrambled — used to keep a grid's shared corners as regular
+// squares so they don't visually conflict with whatever the neighboring grid
+// draws there.
+function tryGenerateJigsaw(lockedBoxIds = []) {
   const region = new Array(81).fill(-1);
   const regionCells = Array.from({ length: 9 }, () => []);
+  const locked = new Set(lockedBoxIds);
+
+  for (const boxId of locked) {
+    const br = Math.floor(boxId / 3) * 3;
+    const bc = (boxId % 3) * 3;
+    for (let dr = 0; dr < 3; dr++) {
+      for (let dc = 0; dc < 3; dc++) {
+        const idx = localIndex(br + dr, bc + dc);
+        region[idx] = boxId;
+        regionCells[boxId].push(idx);
+      }
+    }
+  }
 
   SEED_CELLS.forEach(([r, c], id) => {
+    if (locked.has(id)) return;
     const idx = localIndex(r, c);
     region[idx] = id;
     regionCells[id].push(idx);
   });
 
-  let remaining = 81 - 9;
+  let remaining = 81 - regionCells.reduce((sum, cells) => sum + cells.length, 0);
   let stalled = 0;
   while (remaining > 0) {
-    const order = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const order = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8].filter((id) => !locked.has(id)));
     let progressed = false;
     for (const id of order) {
       if (regionCells[id].length >= 9) continue;
@@ -148,9 +166,9 @@ function tryGenerateJigsaw() {
   return region;
 }
 
-export function generateJigsawRegions() {
+export function generateJigsawRegions(lockedBoxIds = []) {
   for (let attempt = 0; attempt < 200; attempt++) {
-    const result = tryGenerateJigsaw();
+    const result = tryGenerateJigsaw(lockedBoxIds);
     if (result) return result;
   }
   throw new Error('Failed to generate jigsaw regions');
@@ -238,7 +256,11 @@ export function buildBoard() {
     }
 
     if (grid.rule === 'irregular') {
-      const region = generateJigsawRegions();
+      // Boxes 2 (top-right) and 6 (bottom-left, row-major) are this grid's two
+      // shared corners (with "consecutive" and "offset") — keep them as plain
+      // 3x3 squares so the jigsaw shapes don't visually clash with whatever
+      // the neighboring grid draws there.
+      const region = generateJigsawRegions([2, 6]);
       jigsawByGrid[grid.id] = region;
       for (let id = 0; id < 9; id++) {
         const cellsLocal = [];
@@ -553,6 +575,19 @@ function localNeighbors(r, c) {
   return out;
 }
 
+function allNeighbors(r, c) {
+  const out = [];
+  if (r > 0) out.push([r - 1, c]);
+  if (r < 8) out.push([r + 1, c]);
+  if (c > 0) out.push([r, c - 1]);
+  if (c < 8) out.push([r, c + 1]);
+  return out;
+}
+
+function boxOfLocal(r, c) {
+  return Math.floor(r / 3) * 3 + Math.floor(c / 3);
+}
+
 // Derives the purely-cosmetic/read-off overlays that need no generation-time
 // constraint: consecutive bridges and greater/less signs are true by construction
 // for whatever solution exists, and sum-domino targets are just read from it.
@@ -578,12 +613,20 @@ export function computeOverlays(board, bySolution) {
     }
   }
 
+  // Signs only make sense between cells in the same 3x3 box (reading a sign
+  // across a box boundary reads as if it applies to the far side of the box,
+  // which is confusing) — and are skipped entirely in the two boxes shared
+  // with "standard" and "killer" so those grids' corners stay uncluttered.
+  const EXCLUDED_GREATER_BOXES = new Set([2, 6]);
   const greaterGrid = grid('greater');
   if (greaterGrid) {
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
+        const box = boxOfLocal(r, c);
+        if (EXCLUDED_GREATER_BOXES.has(box)) continue;
         const a = greaterGrid.cellIndex[r * 9 + c];
         for (const n of localNeighbors(r, c)) {
+          if (boxOfLocal(n.r, n.c) !== box) continue;
           const b = greaterGrid.cellIndex[n.r * 9 + n.c];
           comparisonSigns.set(`${a}:${b}`, bySolution[a] > bySolution[b] ? '>' : '<');
         }
@@ -591,25 +634,37 @@ export function computeOverlays(board, bySolution) {
     }
   }
 
+  // A handful of non-touching dominoes (never in the box shared with
+  // "standard", to keep that corner clean): each domino's own neighbors are
+  // "blocked" too so no other domino ever ends up adjacent to it.
+  const EXCLUDED_SUM_BOX = 0;
   const sumGrid = grid('sum');
   if (sumGrid) {
-    const claimed = new Array(81).fill(false);
+    const blocked = new Array(81).fill(false);
     const order = shuffled([...Array(81).keys()]);
+    const targetCount = 4 + Math.floor(Math.random() * 2); // 4 or 5
+    let placed = 0;
     for (const local of order) {
-      if (claimed[local]) continue;
-      if (Math.random() > 0.55) continue; // leave gaps so the board isn't wall-to-wall dominoes
+      if (placed >= targetCount) break;
+      if (blocked[local]) continue;
       const r = Math.floor(local / 9);
       const c = local % 9;
+      if (boxOfLocal(r, c) === EXCLUDED_SUM_BOX) continue;
       const options = localNeighbors(r, c)
         .map((n) => n.r * 9 + n.c)
-        .filter((li) => !claimed[li]);
+        .filter((li) => !blocked[li] && boxOfLocal(Math.floor(li / 9), li % 9) !== EXCLUDED_SUM_BOX);
       if (options.length === 0) continue;
       const partner = options[Math.floor(Math.random() * options.length)];
-      claimed[local] = true;
-      claimed[partner] = true;
+      for (const cell of [local, partner]) {
+        blocked[cell] = true;
+        const cr = Math.floor(cell / 9);
+        const cc = cell % 9;
+        for (const [nr, nc] of allNeighbors(cr, cc)) blocked[nr * 9 + nc] = true;
+      }
       const a = sumGrid.cellIndex[local];
       const b = sumGrid.cellIndex[partner];
       sumGroups.push({ cells: [a, b], sum: bySolution[a] + bySolution[b] });
+      placed++;
     }
   }
 
@@ -629,6 +684,28 @@ export function unavailableCellsForValue(board, grid, value) {
       if (grid[p] === 0) unavailable.add(p);
     }
   }
+  return { unavailable, sources: new Set(sources) };
+}
+
+// Same idea, but scoped to a single grid's own row/col/box/etc. groups only —
+// a shared cell's peers from the OTHER grid it also belongs to are ignored.
+// Marks every peer (filled or empty) as unavailable, not just empty ones.
+export function unavailableCellsForValueInGrid(board, grid, value, gridId) {
+  const targetGrid = board.grids.find((g) => g.id === gridId);
+  const sources = [];
+  for (let local = 0; local < 81; local++) {
+    const g = targetGrid.cellIndex[local];
+    if (grid[g] === value) sources.push(g);
+  }
+
+  const unavailable = new Set();
+  for (const sourceIndex of sources) {
+    for (const group of board.cellGroups[sourceIndex]) {
+      if (group.gridId !== gridId) continue;
+      for (const cell of group.cells) unavailable.add(cell);
+    }
+  }
+  for (const s of sources) unavailable.delete(s);
   return { unavailable, sources: new Set(sources) };
 }
 

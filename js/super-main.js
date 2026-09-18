@@ -1,4 +1,4 @@
-import { GRID_DEFS, unavailableCellsForValue } from './supersudoku.js';
+import { GRID_DEFS, unavailableCellsForValueInGrid } from './supersudoku.js';
 
 // Board/overlays/solution are only written once per game (large payload); the
 // frequently-changing progress (grid, notes, timer, ...) is written separately
@@ -6,34 +6,35 @@ import { GRID_DEFS, unavailableCellsForValue } from './supersudoku.js';
 const STORAGE_KEY_BOARD = 'super-sudoku-board-v1';
 const STORAGE_KEY_PROGRESS = 'super-sudoku-progress-v1';
 
+// Flat per-grid background (each grid's own named color). "sum" and "x" have
+// their default overridden per-cell for domino members / the diagonal line.
 const GRID_COLORS = {
-  standard: 'rgba(99,102,241,0.16)',
-  sum: 'rgba(245,158,11,0.16)',
-  consecutive: 'rgba(236,72,153,0.16)',
-  irregular: 'rgba(16,185,129,0.16)',
-  offset: 'rgba(59,130,246,0.16)',
-  x: 'rgba(239,68,68,0.14)',
-  killer: 'rgba(168,85,247,0.16)',
-  greater: 'rgba(20,184,166,0.16)',
+  standard: 'rgba(220,38,38,0.16)', // red
+  sum: 'rgba(234,179,8,0.20)', // yellow
+  consecutive: 'rgba(163,230,53,0.30)', // "салатовый" light green
+  irregular: 'rgba(34,197,94,0.20)', // green
+  offset: 'rgba(59,130,246,0.14)', // blue (per-cell override below)
+  x: 'rgba(37,99,235,0.16)', // blue
+  killer: 'rgba(168,85,247,0.14)', // purple (per-cage override below)
+  greater: 'rgba(236,72,153,0.16)', // pink
 };
-const REGION_PALETTE = [
-  'rgba(16,185,129,0.22)', 'rgba(52,211,153,0.22)', 'rgba(110,231,183,0.22)',
-  'rgba(6,182,212,0.20)', 'rgba(45,212,191,0.20)', 'rgba(132,204,22,0.20)',
-  'rgba(163,230,53,0.20)', 'rgba(74,222,128,0.22)', 'rgba(34,197,94,0.20)',
-];
+// Cage colors are all purple/violet-family shades, per the killer grid's rule.
 const CAGE_PALETTE = [
   'rgba(168,85,247,0.24)', 'rgba(192,132,252,0.22)', 'rgba(217,70,239,0.20)',
   'rgba(232,121,249,0.20)', 'rgba(196,181,253,0.24)', 'rgba(147,51,234,0.20)',
   'rgba(233,213,255,0.26)', 'rgba(126,34,206,0.18)',
 ];
-// One color per "position class" (r%3, c%3) — cells sharing a color must also
-// contain 1-9, the extra constraint the offset/disjoint-groups variant adds.
+// The 9 named colors for the offset grid's position classes (r%3, c%3):
+// yellow, gray, orange, pink, light-green, brown, green, white, purple.
 const OFFSET_PALETTE = [
-  'rgba(239,68,68,0.28)', 'rgba(249,115,22,0.28)', 'rgba(234,179,8,0.30)',
-  'rgba(132,204,22,0.28)', 'rgba(20,184,166,0.28)', 'rgba(59,130,246,0.26)',
-  'rgba(99,102,241,0.28)', 'rgba(217,70,239,0.26)', 'rgba(244,63,94,0.24)',
+  'rgba(234,179,8,0.35)', 'rgba(156,163,175,0.40)', 'rgba(249,115,22,0.35)',
+  'rgba(236,72,153,0.30)', 'rgba(163,230,53,0.40)', 'rgba(146,64,14,0.28)',
+  'rgba(34,197,94,0.32)', '#ffffff', 'rgba(168,85,247,0.30)',
 ];
-const BORDER_COLOR = 'rgba(79,70,229,0.75)';
+const SUM_DOMINO_COLOR = 'rgba(59,130,246,0.40)'; // blue, per the sum grid's rule
+const SUM_CLUE_COLOR = '#dc2626'; // red clue number, per the sum grid's rule
+const DIAGONAL_LINE_COLOR = '#dc2626';
+const BORDER_COLOR = '#4f46e5';
 
 const boardEl = document.getElementById('board');
 const loadingEl = document.getElementById('loading');
@@ -49,19 +50,20 @@ const hintToggleInput = document.getElementById('hint-toggle');
 const winModal = document.getElementById('win-modal');
 const winTimeEl = document.getElementById('win-time');
 const playAgainBtn = document.getElementById('play-again');
+const revealSolutionBtn = document.getElementById('reveal-solution');
 const legendList = document.getElementById('legend-list');
 
-for (const def of GRID_DEFS) {
+GRID_DEFS.forEach((def, i) => {
   const li = document.createElement('li');
   const swatch = document.createElement('span');
   swatch.className = 'legend-swatch';
   swatch.style.background = GRID_COLORS[def.rule];
   li.appendChild(swatch);
   const text = document.createElement('span');
-  text.innerHTML = `<strong>${def.name}</strong> — ${def.hint}`;
+  text.innerHTML = `<strong>${i + 1}. ${def.name}</strong> — ${def.hint}`;
   li.appendChild(text);
   legendList.appendChild(li);
-}
+});
 
 let worker = null;
 let state = null;
@@ -70,20 +72,30 @@ let cellButtons = null; // global cell index -> button element
 let borders = null; // global cell index -> {top,right,bottom,left}
 let cellBackground = null; // global cell index -> css color
 let markers = null; // global cell index -> [{edge, type, char?}]
-let badges = null; // global cell index -> text badge (sum)
+let badges = null; // global cell index -> text badge (sum/cage clue)
+let badgeColors = null; // global cell index -> badge text color
+let gridNumbers = null; // global cell index -> 1-8 label (only set at each grid's own local (0,0))
+let diagonalLines = null; // global cell index -> 'main' | 'anti' | null
 
 function emptyNotes(count) {
   return Array.from({ length: count }, () => new Set());
 }
 
-function computeVisuals(board, overlays) {
+function computeVisuals(board, overlays, solution) {
   const count = board.cellCount;
+  // Only `right`/`bottom` get set for internal box/jigsaw boundaries (the
+  // mirrored `left`/`top` on the neighbor is never set) so each boundary line
+  // is drawn exactly once — drawing it from both sides doubled its thickness
+  // and made lines look broken where the two didn't quite line up.
   const localBorders = Array.from({ length: count }, () => ({ top: false, right: false, bottom: false, left: false }));
   const bg = new Array(count).fill(null);
   const markerMap = Array.from({ length: count }, () => []);
   const badgeMap = new Array(count).fill(null);
+  const badgeColor = new Array(count).fill(null);
+  const gridNumber = new Array(count).fill(null);
 
-  for (const grid of board.grids) {
+  GRID_DEFS.forEach((def, defIndex) => {
+    const grid = board.grids.find((g) => g.id === def.id);
     const boxId = (r, c) => {
       if (grid.rule === 'irregular') return board.jigsawByGrid[grid.id][r * 9 + c];
       return Math.floor(r / 3) * 3 + Math.floor(c / 3);
@@ -92,32 +104,17 @@ function computeVisuals(board, overlays) {
       for (let c = 0; c < 9; c++) {
         const local = r * 9 + c;
         const g = grid.cellIndex[local];
+        if (r === 0 && c === 0) gridNumber[g] = defIndex + 1;
         if (r === 0) localBorders[g].top = true;
         if (c === 0) localBorders[g].left = true;
         if (r === 8) localBorders[g].bottom = true;
         if (c === 8) localBorders[g].right = true;
-        if (c < 8) {
-          const gRight = grid.cellIndex[r * 9 + (c + 1)];
-          if (boxId(r, c) !== boxId(r, c + 1)) {
-            localBorders[g].right = true;
-            localBorders[gRight].left = true;
-          }
-        }
-        if (r < 8) {
-          const gDown = grid.cellIndex[(r + 1) * 9 + c];
-          if (boxId(r, c) !== boxId(r + 1, c)) {
-            localBorders[g].bottom = true;
-            localBorders[gDown].top = true;
-          }
-        }
+        if (c < 8 && boxId(r, c) !== boxId(r, c + 1)) localBorders[g].right = true;
+        if (r < 8 && boxId(r, c) !== boxId(r + 1, c)) localBorders[g].bottom = true;
 
-        if (grid.rule === 'irregular') {
-          bg[g] = REGION_PALETTE[board.jigsawByGrid[grid.id][local] % REGION_PALETTE.length];
-        } else if (grid.rule === 'killer') {
+        if (grid.rule === 'killer') {
           const cageId = board.cagesByGrid[grid.id].findIndex((cage) => cage.includes(local));
           bg[g] = CAGE_PALETTE[cageId % CAGE_PALETTE.length];
-        } else if (grid.rule === 'x' && (r === c || r + c === 8)) {
-          bg[g] = 'rgba(239,68,68,0.38)';
         } else if (grid.rule === 'offset') {
           const posClass = (r % 3) * 3 + (c % 3);
           bg[g] = OFFSET_PALETTE[posClass];
@@ -126,7 +123,7 @@ function computeVisuals(board, overlays) {
         }
       }
     }
-  }
+  });
 
   for (const key of overlays.consecutiveEdges) {
     const [a, b] = key.split(':').map(Number);
@@ -141,23 +138,64 @@ function computeVisuals(board, overlays) {
     const [ra] = board.cellCoords[a];
     const [rb] = board.cellCoords[b];
     if (ra === rb) markerMap[a].push({ edge: 'right', type: 'sign', char: sign });
-    else markerMap[a].push({ edge: 'bottom', type: 'sign', char: sign === '>' ? '∧' : '∨' });
+    else markerMap[a].push({ edge: 'bottom', type: 'sign', char: sign });
   }
 
   for (const { cells, sum } of overlays.sumGroups) {
+    for (const cell of cells) bg[cell] = SUM_DOMINO_COLOR;
     badgeMap[cells[0]] = String(sum);
+    badgeColor[cells[0]] = SUM_CLUE_COLOR;
   }
   for (const grid of board.grids) {
     if (grid.rule !== 'killer') continue;
     for (const cage of board.cagesByGrid[grid.id]) {
       const first = cage.slice().sort((a, b) => a - b)[0];
       const g = grid.cellIndex[first];
-      const sum = cage.reduce((acc, li) => acc + state.solution[grid.cellIndex[li]], 0);
+      const sum = cage.reduce((acc, li) => acc + solution[grid.cellIndex[li]], 0);
       badgeMap[g] = String(sum);
     }
   }
 
-  return { borders: localBorders, cellBackground: bg, markers: markerMap, badges: badgeMap };
+  // The X-sudoku diagonals are drawn as a thin line rather than a cell fill,
+  // because the main diagonal runs straight through this grid's two shared
+  // corners and a solid fill there would fight the neighbor's own coloring
+  // (most visibly the offset grid's 9 colors). The line is traced along the
+  // full straight edge, continuing through however much of the neighboring
+  // grids sit on the same geometric line, purely as decoration.
+  const diagonalLines = new Array(count).fill(null);
+  const xGrid = board.grids.find((g) => g.rule === 'x');
+  if (xGrid) {
+    const coordIndex = new Map();
+    board.cellCoords.forEach(([r, c], i) => coordIndex.set(`${r},${c}`, i));
+    const traceLine = (r0, c0, dr, dc) => {
+      let r = r0;
+      let c = c0;
+      while (coordIndex.has(`${r - dr},${c - dc}`)) {
+        r -= dr;
+        c -= dc;
+      }
+      const cells = [];
+      while (coordIndex.has(`${r},${c}`)) {
+        cells.push(coordIndex.get(`${r},${c}`));
+        r += dr;
+        c += dc;
+      }
+      return cells;
+    };
+    const [originR, originC] = xGrid.origin;
+    for (const cell of traceLine(originR, originC, 1, 1)) diagonalLines[cell] = 'main';
+    for (const cell of traceLine(originR, originC + 8, 1, -1)) diagonalLines[cell] = 'anti';
+  }
+
+  return {
+    borders: localBorders,
+    cellBackground: bg,
+    markers: markerMap,
+    badges: badgeMap,
+    badgeColors: badgeColor,
+    gridNumbers: gridNumber,
+    diagonalLines,
+  };
 }
 
 function buildBoardDom(board) {
@@ -245,6 +283,8 @@ function startGameFromResult(result, difficulty) {
     seconds: 0,
     running: true,
     digitLens: null,
+    digitLensCell: null,
+    digitLensGridId: null,
     hintEnabled: hintToggleInput.checked,
     history: [],
     difficulty,
@@ -252,11 +292,14 @@ function startGameFromResult(result, difficulty) {
   };
 
   buildBoardDom(board);
-  const visuals = computeVisuals(board, overlays);
+  const visuals = computeVisuals(board, overlays, solution);
   borders = visuals.borders;
   cellBackground = visuals.cellBackground;
   markers = visuals.markers;
   badges = visuals.badges;
+  badgeColors = visuals.badgeColors;
+  gridNumbers = visuals.gridNumbers;
+  diagonalLines = visuals.diagonalLines;
 
   persistBoard();
   persistProgress();
@@ -298,6 +341,8 @@ function persistProgress() {
         notesMode: state.notesMode,
         seconds: state.seconds,
         digitLens: state.digitLens,
+        digitLensCell: state.digitLensCell,
+        digitLensGridId: state.digitLensGridId,
         hintEnabled: state.hintEnabled,
         history: state.history,
         difficulty: state.difficulty,
@@ -337,11 +382,14 @@ function loadPersisted() {
     hintToggleInput.checked = !!state.hintEnabled;
 
     buildBoardDom(board);
-    const visuals = computeVisuals(board, overlays);
+    const visuals = computeVisuals(board, overlays, state.solution);
     borders = visuals.borders;
     cellBackground = visuals.cellBackground;
     markers = visuals.markers;
     badges = visuals.badges;
+    badgeColors = visuals.badgeColors;
+    gridNumbers = visuals.gridNumbers;
+    diagonalLines = visuals.diagonalLines;
     return true;
   } catch {
     return false;
@@ -371,7 +419,17 @@ function onCellClick(index) {
   if (!state || state.finished) return;
   const value = state.grid[index];
   if (state.hintEnabled && value !== 0) {
-    state.digitLens = state.digitLens === value ? null : value;
+    // Toggle off only when clicking the exact same cell again — a different
+    // cell with the same digit value re-targets the lens to ITS grid instead.
+    if (state.digitLensCell === index) {
+      state.digitLens = null;
+      state.digitLensCell = null;
+      state.digitLensGridId = null;
+    } else {
+      state.digitLens = value;
+      state.digitLensCell = index;
+      state.digitLensGridId = state.board.cellOwners[index][0].gridId;
+    }
     state.selected = index;
     render();
     return;
@@ -448,15 +506,27 @@ function checkGameState() {
   }
 }
 
+// Debug helper: fills every cell with the correct solved value so the puzzle's
+// rules can be visually spot-checked, without triggering the win modal.
+function onRevealSolution() {
+  if (!state) return;
+  state.grid = state.solution.slice();
+  persistProgress();
+  render();
+}
+
 function render() {
   if (!state || !cellButtons) return;
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
+  // The hint lens is scoped to the single grid the clicked cell belongs to
+  // (its row/col/box/etc. groups only), and marks every peer — filled or
+  // empty — as unavailable, not just empty cells.
   let unavailable = new Set();
   let sources = new Set();
-  if (state.hintEnabled && state.digitLens !== null) {
-    const result = unavailableCellsForValue(state.board, state.grid, state.digitLens);
+  if (state.hintEnabled && state.digitLens !== null && state.digitLensGridId) {
+    const result = unavailableCellsForValueInGrid(state.board, state.grid, state.digitLens, state.digitLensGridId);
     unavailable = result.unavailable;
     sources = result.sources;
   }
@@ -470,18 +540,27 @@ function render() {
     const value = state.grid[i];
 
     el.className = 'cell scell';
-    el.style.background = cellBackground[i];
+    el.style.backgroundColor = cellBackground[i];
+
+    const diag = diagonalLines[i];
+    if (diag === 'main') {
+      el.style.backgroundImage = `linear-gradient(to bottom right, transparent calc(50% - 1px), ${DIAGONAL_LINE_COLOR} calc(50% - 1px), ${DIAGONAL_LINE_COLOR} calc(50% + 1px), transparent calc(50% + 1px))`;
+    } else if (diag === 'anti') {
+      el.style.backgroundImage = `linear-gradient(to top right, transparent calc(50% - 1px), ${DIAGONAL_LINE_COLOR} calc(50% - 1px), ${DIAGONAL_LINE_COLOR} calc(50% + 1px), transparent calc(50% + 1px))`;
+    } else {
+      el.style.backgroundImage = 'none';
+    }
+
+    // Real borders (not box-shadow) so lines are continuous: `right`/`bottom`
+    // always draw (thick at a boundary, thin otherwise), while `left`/`top`
+    // only ever draw at a grid's true outer edge — its neighbor on that side
+    // already supplies the line otherwise, so drawing both would double it.
     const b = borders[i];
-    const parts = [];
-    if (b.top) parts.push(`inset 0 2px 0 0 ${BORDER_COLOR}`);
-    if (b.left) parts.push(`inset 2px 0 0 0 ${BORDER_COLOR}`);
-    if (b.right) parts.push(`inset -2px 0 0 0 ${BORDER_COLOR}`);
-    if (b.bottom) parts.push(`inset 0 -2px 0 0 ${BORDER_COLOR}`);
-    // Shared cells keep their real per-grid color (offset group, cage, jigsaw
-    // region, ...) instead of being flattened to one "shared" color — a ring
-    // on top is enough to flag that the cell belongs to two puzzles at once.
-    if (state.board.cellOwners[i].length > 1) parts.push('inset 0 0 0 2px #eab308');
-    el.style.boxShadow = parts.join(', ');
+    el.style.borderRight = b.right ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
+    el.style.borderBottom = b.bottom ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
+    el.style.borderLeft = b.left ? `3px solid ${BORDER_COLOR}` : '0';
+    el.style.borderTop = b.top ? `3px solid ${BORDER_COLOR}` : '0';
+    el.style.boxShadow = 'none';
 
     el.innerHTML = '';
 
@@ -503,10 +582,18 @@ function render() {
       el.appendChild(notesGrid);
     }
 
+    if (gridNumbers[i]) {
+      const numTag = document.createElement('span');
+      numTag.className = 'grid-number';
+      numTag.textContent = String(gridNumbers[i]);
+      el.appendChild(numTag);
+    }
+
     if (badges[i]) {
       const badge = document.createElement('span');
       badge.className = 'cage-badge';
       badge.textContent = badges[i];
+      if (badgeColors[i]) badge.style.color = badgeColors[i];
       el.appendChild(badge);
     }
 
@@ -565,6 +652,7 @@ playAgainBtn.addEventListener('click', () => {
   winModal.classList.remove('open');
   newGame(difficultySelect.value);
 });
+revealSolutionBtn.addEventListener('click', onRevealSolution);
 document.addEventListener('keydown', onKeydown);
 
 buildNumpad();

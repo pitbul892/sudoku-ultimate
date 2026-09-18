@@ -63,8 +63,8 @@
 
 .super-board {
   display: grid;
-  gap: 1px;
-  background: var(--border);
+  gap: 0;
+  background: var(--bg);
   border: 2px solid var(--border);
   border-radius: 10px;
   width: 100%;
@@ -93,6 +93,23 @@
   pointer-events: none;
 }
 
+.grid-number {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: clamp(6px, 1.3vw, 9px);
+  font-weight: 800;
+  color: var(--accent-2);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.debug-btn {
+  border-style: dashed;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
 .edge-marker {
   position: absolute;
   pointer-events: none;
@@ -119,28 +136,22 @@
 }
 
 .edge-marker.sign {
-  color: #fbbf24;
-  font-weight: 700;
-  font-size: clamp(6px, 1.2vw, 9px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 18, 32, 0.85);
-  border-radius: 50%;
-  width: 10px;
-  height: 10px;
+  color: #000;
+  font-weight: 800;
+  font-size: clamp(7px, 1.6vw, 11px);
+  line-height: 1;
 }
 
 .marker-right.sign {
-  right: -5px;
+  right: -3px;
   top: 50%;
   transform: translateY(-50%);
 }
 
 .marker-bottom.sign {
-  bottom: -5px;
+  bottom: -4px;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translateX(-50%) rotate(90deg);
 }
 
 .loading-overlay {
