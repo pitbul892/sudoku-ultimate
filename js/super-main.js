@@ -155,9 +155,9 @@ function computeBorders(board) {
     const bottomNeighbor = coordIndex.get(`${r + 1},${c}`);
     borders[g].bottom = bottomNeighbor !== undefined && isBoundary(g, bottomNeighbor);
 
-    // Left/top: only mark if there's actually a neighbor (never outer edge)
-    borders[g].left = false;
-    borders[g].top = false;
+    // Left/top: draw borders on outer edges of the game board (no neighbor means edge)
+    borders[g].left = coordIndex.get(`${r},${c - 1}`) === undefined;
+    borders[g].top = coordIndex.get(`${r - 1},${c}`) === undefined;
   }
   return borders;
 }
