@@ -25,13 +25,18 @@ const GRID_COLORS = {
 const NAMED_PALETTE = [
   'rgba(234,179,8,0.35)', 'rgba(156,163,175,0.40)', 'rgba(249,115,22,0.35)',
   'rgba(236,72,153,0.30)', 'rgba(163,230,53,0.40)', 'rgba(146,64,14,0.28)',
-  'rgba(34,197,94,0.32)', '#ffffff', 'rgba(168,85,247,0.30)',
+  // The "white" slot is fully transparent rather than #ffffff: the board behind
+  // it is already white, and an opaque fill would hide the grid lines, which are
+  // drawn underneath the cells so block colours carry across them.
+  'rgba(34,197,94,0.32)', 'rgba(255,255,255,0)', 'rgba(168,85,247,0.30)',
 ];
 const SUM_BLUE_COLOR = 'rgba(59,130,246,0.40)'; // the addend cells
 const SUM_RED_COLOR = 'rgba(220,38,38,0.40)'; // the sum cell — a colored field, not a revealed number
-// Pale pink: the diagonals run across cells that hold digits, so they read as a
-// background marking rather than competing with the numbers drawn over them.
-const DIAGONAL_LINE_COLOR = '#f9a8d4';
+const DIAGONAL_LINE_COLOR = '#dc2626';
+// Fill for the cells the diagonals run through. Only applied where the X grid
+// owns the cell alone: in a box it shares with another grid this would read as
+// that grid's own marking.
+const X_DIAGONAL_CELL_COLOR = 'rgba(220,38,38,0.28)';
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
 
@@ -185,6 +190,12 @@ function computeVisuals(board, overlays, solution) {
         } else if (grid.rule === 'offset') {
           const posClass = (r % 3) * 3 + (c % 3);
           bg[g] = NAMED_PALETTE[posClass];
+        } else if (
+          grid.rule === 'x'
+          && (r === c || r + c === 8)
+          && board.cellOwners[g].length === 1
+        ) {
+          bg[g] = X_DIAGONAL_CELL_COLOR;
         } else if (bg[g] === null) {
           bg[g] = GRID_COLORS[grid.rule];
         }
@@ -264,7 +275,10 @@ function buildBoardDom(board) {
   gridSvg.style.position = 'absolute';
   gridSvg.style.inset = '0';
   gridSvg.style.pointerEvents = 'none';
-  gridSvg.style.zIndex = '1';
+  // Under the cells, so a cage or sum group keeps its colour across a thick
+  // border instead of being cut by it. Every cell fill is translucent, so the
+  // border still reads through the colour.
+  gridSvg.style.zIndex = '-1';
 
   const drawnLines = new Set(); // Track lines to avoid duplicates
 
@@ -388,7 +402,7 @@ function buildBoardDom(board) {
       line.setAttribute('x2', String(bx));
       line.setAttribute('y2', String(by));
       line.setAttribute('stroke', DIAGONAL_LINE_COLOR);
-      line.setAttribute('stroke-width', '0.12');
+      line.setAttribute('stroke-width', '0.06');
       line.setAttribute('stroke-linecap', 'square');
       svg.appendChild(line);
     }

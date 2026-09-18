@@ -118,11 +118,10 @@
   /* Two-digit sums share a ~20px cell with the centred digit, which paints over
      them, so they stay small and tucked into the corner. */
   font-size: clamp(5px, 0.95vw, 7px);
-  font-weight: 700;
-  color: #4c1d95;
+  font-weight: 500;
+  color: #6b7280;
   line-height: 1;
   letter-spacing: -0.03em;
-  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
   pointer-events: none;
 }
 
@@ -135,7 +134,8 @@
 .edge-marker {
   position: absolute;
   pointer-events: none;
-  z-index: 2;
+  /* Above the diagonal overlay, same as the digits. */
+  z-index: 3;
 }
 
 .edge-marker.bridge {
