@@ -77,6 +77,10 @@
   font-size: clamp(9px, 1.8vw, 13px);
   position: relative;
   aspect-ratio: 1 / 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
 }
 
 .scell .notes span {
