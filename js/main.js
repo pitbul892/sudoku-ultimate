@@ -1,12 +1,10 @@
 import { generatePuzzle, unavailableCellsForValue, boxIndex } from './sudoku.js';
 
 const STORAGE_KEY = 'sudoku-ultimate-state-v1';
-const MAX_MISTAKES = 3;
 
 const boardEl = document.getElementById('board');
 const numpadEl = document.getElementById('numpad');
 const timerEl = document.getElementById('timer');
-const mistakesEl = document.getElementById('mistakes');
 const difficultySelect = document.getElementById('difficulty');
 const newGameBtn = document.getElementById('new-game');
 const undoBtn = document.getElementById('undo');
@@ -14,16 +12,13 @@ const eraseBtn = document.getElementById('erase');
 const notesToggleBtn = document.getElementById('notes-toggle');
 const hintToggleInput = document.getElementById('hint-toggle');
 const winModal = document.getElementById('win-modal');
-const loseModal = document.getElementById('lose-modal');
 const winTimeEl = document.getElementById('win-time');
-const winMistakesEl = document.getElementById('win-mistakes');
 const playAgainBtn = document.getElementById('play-again');
-const tryAgainBtn = document.getElementById('try-again');
 
 /** @type {{
  *  puzzle: number[], solution: number[], grid: number[], given: boolean[],
  *  notes: Set<number>[], selected: number|null, notesMode: boolean,
- *  mistakes: number, seconds: number, running: boolean, digitLens: number|null,
+ *  seconds: number, running: boolean, digitLens: number|null,
  *  hintEnabled: boolean, history: {index:number, prevValue:number, prevNotes:number[]}[],
  *  difficulty: string, finished: boolean
  * }} */
@@ -45,7 +40,6 @@ function newGame(difficulty) {
     notes: emptyNotes(),
     selected: null,
     notesMode: false,
-    mistakes: 0,
     seconds: 0,
     running: true,
     digitLens: null,
@@ -184,9 +178,6 @@ function onDigit(n) {
       state.grid[index] = 0;
     } else {
       state.grid[index] = n;
-      if (n !== state.solution[index]) {
-        state.mistakes++;
-      }
     }
   }
 
@@ -222,14 +213,6 @@ function onUndo() {
 }
 
 function checkGameState() {
-  if (state.mistakes >= MAX_MISTAKES) {
-    state.finished = true;
-    state.running = false;
-    stopTimer();
-    persist();
-    showModal(loseModal);
-    return;
-  }
   const solved = state.grid.every((v, i) => v === state.solution[i]);
   if (solved) {
     state.finished = true;
@@ -237,23 +220,17 @@ function checkGameState() {
     stopTimer();
     persist();
     winTimeEl.textContent = timerEl.textContent;
-    winMistakesEl.textContent = String(state.mistakes);
-    showModal(winModal);
+    winModal.classList.add('open');
   }
 }
 
-function showModal(modal) {
-  modal.classList.add('open');
-}
 function hideModals() {
   winModal.classList.remove('open');
-  loseModal.classList.remove('open');
 }
 
 function render() {
   if (!state) return;
 
-  mistakesEl.textContent = `${state.mistakes}/${MAX_MISTAKES}`;
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
@@ -376,10 +353,6 @@ hintToggleInput.addEventListener('change', () => {
 });
 
 playAgainBtn.addEventListener('click', () => {
-  hideModals();
-  newGame(difficultySelect.value);
-});
-tryAgainBtn.addEventListener('click', () => {
   hideModals();
   newGame(difficultySelect.value);
 });

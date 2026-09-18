@@ -5,7 +5,6 @@ import { GRID_DEFS, unavailableCellsForValue } from './supersudoku.js';
 // and often, so we don't re-serialize hundreds of KB on every timer tick.
 const STORAGE_KEY_BOARD = 'super-sudoku-board-v1';
 const STORAGE_KEY_PROGRESS = 'super-sudoku-progress-v1';
-const MAX_MISTAKES = 5;
 
 const GRID_COLORS = {
   standard: 'rgba(99,102,241,0.16)',
@@ -28,14 +27,13 @@ const CAGE_PALETTE = [
   'rgba(232,121,249,0.20)', 'rgba(196,181,253,0.24)', 'rgba(147,51,234,0.20)',
   'rgba(233,213,255,0.26)', 'rgba(126,34,206,0.18)',
 ];
-const BORDER_COLOR = 'rgba(180,188,240,0.85)';
+const BORDER_COLOR = 'rgba(79,70,229,0.75)';
 
 const boardEl = document.getElementById('board');
 const loadingEl = document.getElementById('loading');
 const loadingTextEl = document.getElementById('loading-text');
 const numpadEl = document.getElementById('numpad');
 const timerEl = document.getElementById('timer');
-const mistakesEl = document.getElementById('mistakes');
 const difficultySelect = document.getElementById('difficulty');
 const newGameBtn = document.getElementById('new-game');
 const undoBtn = document.getElementById('undo');
@@ -43,11 +41,8 @@ const eraseBtn = document.getElementById('erase');
 const notesToggleBtn = document.getElementById('notes-toggle');
 const hintToggleInput = document.getElementById('hint-toggle');
 const winModal = document.getElementById('win-modal');
-const loseModal = document.getElementById('lose-modal');
 const winTimeEl = document.getElementById('win-time');
-const winMistakesEl = document.getElementById('win-mistakes');
 const playAgainBtn = document.getElementById('play-again');
-const tryAgainBtn = document.getElementById('try-again');
 const legendList = document.getElementById('legend-list');
 
 for (const def of GRID_DEFS) {
@@ -242,7 +237,6 @@ function startGameFromResult(result, difficulty) {
     notes: emptyNotes(board.cellCount),
     selected: null,
     notesMode: false,
-    mistakes: 0,
     seconds: 0,
     running: true,
     digitLens: null,
@@ -297,7 +291,6 @@ function persistProgress() {
         notes: state.notes.map((s) => [...s]),
         selected: state.selected,
         notesMode: state.notesMode,
-        mistakes: state.mistakes,
         seconds: state.seconds,
         digitLens: state.digitLens,
         hintEnabled: state.hintEnabled,
@@ -405,7 +398,6 @@ function onDigit(n) {
       state.grid[index] = 0;
     } else {
       state.grid[index] = n;
-      if (n !== state.solution[index]) state.mistakes++;
     }
   }
 
@@ -440,15 +432,6 @@ function onUndo() {
 }
 
 function checkGameState() {
-  if (state.mistakes >= MAX_MISTAKES) {
-    state.finished = true;
-    state.running = false;
-    stopTimer();
-    persistProgress();
-    winModal.classList.remove('open');
-    loseModal.classList.add('open');
-    return;
-  }
   const solved = state.grid.every((v, i) => v === state.solution[i]);
   if (solved) {
     state.finished = true;
@@ -456,15 +439,12 @@ function checkGameState() {
     stopTimer();
     persistProgress();
     winTimeEl.textContent = timerEl.textContent;
-    winMistakesEl.textContent = String(state.mistakes);
-    loseModal.classList.remove('open');
     winModal.classList.add('open');
   }
 }
 
 function render() {
   if (!state || !cellButtons) return;
-  mistakesEl.textContent = `${state.mistakes}/${MAX_MISTAKES}`;
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
@@ -574,10 +554,6 @@ hintToggleInput.addEventListener('change', () => {
 });
 playAgainBtn.addEventListener('click', () => {
   winModal.classList.remove('open');
-  newGame(difficultySelect.value);
-});
-tryAgainBtn.addEventListener('click', () => {
-  loseModal.classList.remove('open');
   newGame(difficultySelect.value);
 });
 document.addEventListener('keydown', onKeydown);
