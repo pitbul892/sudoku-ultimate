@@ -79,7 +79,10 @@
   position: relative;
   aspect-ratio: 1 / 1;
   box-sizing: border-box;
-  overflow: hidden;
+  /* Comparison signs and bridge markers straddle the line between two cells, so
+     clipping here cut every one of them in half. Cell borders, which this was
+     added for, are drawn by the SVG overlay now. */
+  overflow: visible;
   padding: 0;
   margin: 0;
 }
@@ -95,6 +98,15 @@
   filter: none;
 }
 
+/* The X-sudoku diagonals are painted over the cell fills, so everything a cell
+   shows has to sit above them to stay readable. */
+.scell .value,
+.scell .notes,
+.cage-badge {
+  position: relative;
+  z-index: 3;
+}
+
 .cage-badge {
   position: absolute;
   top: 1px;
@@ -103,7 +115,6 @@
   font-weight: 700;
   color: #4c1d95;
   line-height: 1;
-  z-index: 1;
   pointer-events: none;
 }
 
@@ -139,22 +150,32 @@
 }
 
 .edge-marker.sign {
-  color: #6b7280;
-  font-weight: 400;
+  color: #4b5563;
+  font-weight: 700;
   font-size: clamp(7px, 1.6vw, 11px);
   line-height: 1;
+  /* Square box centred on the glyph, so rotating the bottom marker doesn't
+     shift it off the edge it marks. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2em;
+  height: 1.2em;
+  /* The sign sits on top of a grid line, sometimes a thick block border. */
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff;
+  z-index: 3;
 }
 
 .marker-right.sign {
-  right: -3px;
+  right: 0;
   top: 50%;
-  transform: translateY(-50%);
+  transform: translate(50%, -50%);
 }
 
 .marker-bottom.sign {
-  bottom: -4px;
+  bottom: 0;
   left: 50%;
-  transform: translateX(-50%) rotate(90deg);
+  transform: translate(-50%, 50%) rotate(90deg);
 }
 
 .loading-overlay {

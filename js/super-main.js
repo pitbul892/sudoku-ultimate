@@ -29,7 +29,9 @@ const NAMED_PALETTE = [
 ];
 const SUM_BLUE_COLOR = 'rgba(59,130,246,0.40)'; // the addend cells
 const SUM_RED_COLOR = 'rgba(220,38,38,0.40)'; // the sum cell — a colored field, not a revealed number
-const DIAGONAL_LINE_COLOR = '#dc2626'; // thin line stroke for the X-sudoku diagonals
+// Pale pink: the diagonals run across cells that hold digits, so they read as a
+// background marking rather than competing with the numbers drawn over them.
+const DIAGONAL_LINE_COLOR = '#f9a8d4';
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
 
@@ -287,57 +289,51 @@ function buildBoardDom(board) {
     return a !== b;
   };
 
+  // Collected by weight rather than appended as they're built: in cell order a
+  // thin line drawn later paints across a thick block border it crosses.
+  const thinLines = [];
+  const thickLines = [];
+  const addLine = (x1, y1, x2, y2, isBoundary) => {
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', String(x1));
+    line.setAttribute('y1', String(y1));
+    line.setAttribute('x2', String(x2));
+    line.setAttribute('y2', String(y2));
+    line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+    line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+    (isBoundary ? thickLines : thinLines).push(line);
+  };
+
   for (let i = 0; i < board.cellCount; i++) {
     const [r, c] = board.cellCoords[i];
 
-    // Right edge: draw line between this cell and next, or outer border if no neighbor
+    // Right edge: line between this cell and the next, or the board's outer edge
     const rightCell = `${r},${c + 1}`;
     const lineKeyRight = `v${r},${c + 1}`;
     if (!drawnLines.has(lineKeyRight)) {
       const hasRightNeighbor = cellPositions.has(rightCell);
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', String(c + 1));
-      line.setAttribute('y1', String(r));
-      line.setAttribute('x2', String(c + 1));
-      line.setAttribute('y2', String(r + 1));
       const jigRight = jigsawEdge(`${r},${c}`, rightCell);
       const isBoundary = !hasRightNeighbor || (jigRight !== null ? jigRight : (c + 1) % 3 === 0);
-      line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
-      line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
-      gridSvg.appendChild(line);
+      addLine(c + 1, r, c + 1, r + 1, isBoundary);
       drawnLines.add(lineKeyRight);
     }
 
-    // Bottom edge: draw line between this cell and next, or outer border if no neighbor
+    // Bottom edge
     const bottomCell = `${r + 1},${c}`;
     const lineKeyBottom = `h${r + 1},${c}`;
     if (!drawnLines.has(lineKeyBottom)) {
       const hasBottomNeighbor = cellPositions.has(bottomCell);
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', String(c));
-      line.setAttribute('y1', String(r + 1));
-      line.setAttribute('x2', String(c + 1));
-      line.setAttribute('y2', String(r + 1));
       const jigBottom = jigsawEdge(`${r},${c}`, bottomCell);
       const isBoundary = !hasBottomNeighbor || (jigBottom !== null ? jigBottom : (r + 1) % 3 === 0);
-      line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
-      line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
-      gridSvg.appendChild(line);
+      addLine(c, r + 1, c + 1, r + 1, isBoundary);
       drawnLines.add(lineKeyBottom);
     }
 
-    // Outer edges: draw borders on perimeter
+    // Outer edges: the board's own perimeter
     if (!cellPositions.has(`${r},${c - 1}`)) {
       const lineKey = `left${r},${c}`;
       if (!drawnLines.has(lineKey)) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(c));
-        line.setAttribute('y1', String(r));
-        line.setAttribute('x2', String(c));
-        line.setAttribute('y2', String(r + 1));
-        line.setAttribute('stroke', BORDER_COLOR);
-        line.setAttribute('stroke-width', '0.12');
-        gridSvg.appendChild(line);
+        addLine(c, r, c, r + 1, true);
         drawnLines.add(lineKey);
       }
     }
@@ -345,18 +341,13 @@ function buildBoardDom(board) {
     if (!cellPositions.has(`${r - 1},${c}`)) {
       const lineKey = `top${r},${c}`;
       if (!drawnLines.has(lineKey)) {
-        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        line.setAttribute('x1', String(c));
-        line.setAttribute('y1', String(r));
-        line.setAttribute('x2', String(c + 1));
-        line.setAttribute('y2', String(r));
-        line.setAttribute('stroke', BORDER_COLOR);
-        line.setAttribute('stroke-width', '0.12');
-        gridSvg.appendChild(line);
+        addLine(c, r, c + 1, r, true);
         drawnLines.add(lineKey);
       }
     }
   }
+  for (const line of thinLines) gridSvg.appendChild(line);
+  for (const line of thickLines) gridSvg.appendChild(line);
   boardEl.appendChild(gridSvg);
 
   // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
@@ -370,26 +361,37 @@ function buildBoardDom(board) {
     svg.style.pointerEvents = 'none';
     svg.style.zIndex = '2';
 
-    // X-sudoku: rows 18-26, cols 6-14 (0-indexed)
-    // Main diagonal: (6,18) to (14,26)
-    const main = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    main.setAttribute('x1', '6');
-    main.setAttribute('y1', '18');
-    main.setAttribute('x2', '14');
-    main.setAttribute('y2', '26');
-    main.setAttribute('stroke', '#dc2626');
-    main.setAttribute('stroke-width', '0.2');
-    svg.appendChild(main);
+    // Derived from the grid's own cells rather than hardcoded: a cell at (r, c)
+    // spans (c, r) to (c + 1, r + 1) here, so the far corner is maxCol + 1 /
+    // maxRow + 1. Hardcoding stopped the line a whole cell short of it.
+    let minR = Infinity;
+    let maxR = -Infinity;
+    let minC = Infinity;
+    let maxC = -Infinity;
+    for (let i = 0; i < board.cellCount; i++) {
+      if (!board.cellOwners[i].some((o) => o.gridId === xGrid.id)) continue;
+      const [r, c] = board.cellCoords[i];
+      if (r < minR) minR = r;
+      if (r > maxR) maxR = r;
+      if (c < minC) minC = c;
+      if (c > maxC) maxC = c;
+    }
+    const x0 = minC;
+    const y0 = minR;
+    const x1 = maxC + 1;
+    const y1 = maxR + 1;
 
-    // Anti-diagonal: (14,18) to (6,26)
-    const anti = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    anti.setAttribute('x1', '14');
-    anti.setAttribute('y1', '18');
-    anti.setAttribute('x2', '6');
-    anti.setAttribute('y2', '26');
-    anti.setAttribute('stroke', '#dc2626');
-    anti.setAttribute('stroke-width', '0.2');
-    svg.appendChild(anti);
+    for (const [ax, ay, bx, by] of [[x0, y0, x1, y1], [x1, y0, x0, y1]]) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', String(ax));
+      line.setAttribute('y1', String(ay));
+      line.setAttribute('x2', String(bx));
+      line.setAttribute('y2', String(by));
+      line.setAttribute('stroke', DIAGONAL_LINE_COLOR);
+      line.setAttribute('stroke-width', '0.12');
+      line.setAttribute('stroke-linecap', 'square');
+      svg.appendChild(line);
+    }
 
     boardEl.appendChild(svg);
   }
