@@ -39,6 +39,19 @@ const DIAGONAL_LINE_COLOR = '#dc2626';
 const X_DIAGONAL_CELL_COLOR = 'rgba(220,38,38,0.28)';
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
+const THIN_W = 0.05;
+const THICK_W = 0.12;
+// Painted over the cell fills, bottom to top. The marker and content values are
+// mirrored in super.css; .scell sets no z-index of its own, so a cell's children
+// stack against these rather than inside the cell.
+const LAYER_Z = {
+  thin: 1,
+  diagonal: 2,
+  thick: 3,
+  marker: 4,
+  regionPatch: 5,
+  content: 6,
+};
 
 const boardEl = document.getElementById('board');
 const loadingEl = document.getElementById('loading');
@@ -175,6 +188,9 @@ function computeVisuals(board, overlays, solution) {
   const bg = new Array(count).fill(null);
   const badgeMap = new Array(count).fill(null);
   const markerMap = Array.from({ length: count }, () => []);
+  // Which killer cage / sum group each cell belongs to, so the board can carry
+  // a region's colour across the thick border between two of its cells.
+  const groupOf = new Array(count).fill(null);
 
   for (const grid of board.grids) {
     const cageColors = grid.rule === 'killer' ? colorCages(board.cagesByGrid[grid.id]) : null;
@@ -187,6 +203,7 @@ function computeVisuals(board, overlays, solution) {
         if (grid.rule === 'killer') {
           const cageId = board.cagesByGrid[grid.id].findIndex((cage) => cage.includes(local));
           bg[g] = NAMED_PALETTE[cageColors[cageId]];
+          groupOf[g] = `${grid.id}:${cageId}`;
         } else if (grid.rule === 'offset') {
           const posClass = (r % 3) * 3 + (c % 3);
           bg[g] = NAMED_PALETTE[posClass];
@@ -233,15 +250,19 @@ function computeVisuals(board, overlays, solution) {
 
   // The sum rule: 2-4 blue addend cells plus one red cell whose own solved
   // digit equals their sum — colored fields only, no floating clue number.
-  for (const { blues, red } of overlays.sumGroups) {
-    for (const cell of blues) bg[cell] = SUM_BLUE_COLOR;
+  overlays.sumGroups.forEach(({ blues, red }, groupId) => {
+    for (const cell of blues) {
+      bg[cell] = SUM_BLUE_COLOR;
+      groupOf[cell] = `sum:${groupId}`;
+    }
     bg[red] = SUM_RED_COLOR;
-  }
+    groupOf[red] = `sum:${groupId}`;
+  });
 
-  return { borders: localBorders, cellBackground: bg, badges: badgeMap, diagonalLines, markers: markerMap };
+  return { borders: localBorders, cellBackground: bg, badges: badgeMap, diagonalLines, markers: markerMap, groupOf };
 }
 
-function buildBoardDom(board) {
+function buildBoardDom(board, visuals) {
   boardEl.innerHTML = '';
   let maxRow = 0;
   let maxCol = 0;
@@ -253,10 +274,10 @@ function buildBoardDom(board) {
   boardEl.style.gridTemplateRows = `repeat(${maxRow + 1}, minmax(0, 1fr))`;
 
   cellButtons = new Array(board.cellCount);
-  const cellPositions = new Set();
+  const cellAt = new Map();
   for (let i = 0; i < board.cellCount; i++) {
     const [r, c] = board.cellCoords[i];
-    cellPositions.add(`${r},${c}`);
+    cellAt.set(`${r},${c}`, i);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cell scell';
@@ -268,9 +289,8 @@ function buildBoardDom(board) {
     cellButtons[i] = btn;
   }
 
-  // Two overlays, because the two line weights sit on opposite sides of the
-  // cells: a block colour is meant to carry across a thick border (which stays
-  // visible through the translucent fill) but to stop at every thin one.
+  // Stacking order over the cell fills: thin lines, red diagonals, thick
+  // borders, then the markers and region patches (see LAYER_Z).
   const makeOverlay = (className, zIndex) => {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', className);
@@ -278,11 +298,12 @@ function buildBoardDom(board) {
     svg.style.position = 'absolute';
     svg.style.inset = '0';
     svg.style.pointerEvents = 'none';
-    svg.style.zIndex = zIndex;
+    svg.style.zIndex = String(zIndex);
     return svg;
   };
-  const thickSvg = makeOverlay('grid-overlay grid-overlay-thick', '-1');
-  const thinSvg = makeOverlay('grid-overlay grid-overlay-thin', '1');
+  const thinSvg = makeOverlay('grid-overlay grid-overlay-thin', LAYER_Z.thin);
+  const thickSvg = makeOverlay('grid-overlay grid-overlay-thick', LAYER_Z.thick);
+  const patchSvg = makeOverlay('region-patch-overlay', LAYER_Z.regionPatch);
 
   const drawnLines = new Set(); // Track lines to avoid duplicates
 
@@ -316,8 +337,36 @@ function buildBoardDom(board) {
     line.setAttribute('x2', String(x2));
     line.setAttribute('y2', String(y2));
     line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
-    line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+    line.setAttribute('stroke-width', isBoundary ? String(THICK_W) : String(THIN_W));
     (isBoundary ? thickLines : thinLines).push(line);
+  };
+
+  // Where a killer cage or sum group spans a thick border, each side paints its
+  // own half of that border strip in its fill, so the region reads as one block
+  // across the border while the border still shows through. The strip stops
+  // short of the perpendicular edges so it never covers a thin line.
+  const groupOf = visuals.groupOf;
+  const fill = visuals.cellBackground;
+  const addRegionPatch = (a, b, vertical, r, c) => {
+    if (!groupOf[a] || groupOf[a] !== groupOf[b]) return;
+    const half = THICK_W / 2 + 0.01;
+    const inset = THIN_W / 2 + 0.005;
+    for (const [cell, side] of [[a, -1], [b, 1]]) {
+      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      if (vertical) {
+        rect.setAttribute('x', String(side < 0 ? c + 1 - half : c + 1));
+        rect.setAttribute('y', String(r + inset));
+        rect.setAttribute('width', String(half));
+        rect.setAttribute('height', String(1 - 2 * inset));
+      } else {
+        rect.setAttribute('x', String(c + inset));
+        rect.setAttribute('y', String(side < 0 ? r + 1 - half : r + 1));
+        rect.setAttribute('width', String(1 - 2 * inset));
+        rect.setAttribute('height', String(half));
+      }
+      rect.setAttribute('fill', fill[cell]);
+      patchSvg.appendChild(rect);
+    }
   };
 
   for (let i = 0; i < board.cellCount; i++) {
@@ -327,10 +376,11 @@ function buildBoardDom(board) {
     const rightCell = `${r},${c + 1}`;
     const lineKeyRight = `v${r},${c + 1}`;
     if (!drawnLines.has(lineKeyRight)) {
-      const hasRightNeighbor = cellPositions.has(rightCell);
+      const rightIdx = cellAt.get(rightCell);
       const jigRight = jigsawEdge(`${r},${c}`, rightCell);
-      const isBoundary = !hasRightNeighbor || (jigRight !== null ? jigRight : (c + 1) % 3 === 0);
+      const isBoundary = rightIdx === undefined || (jigRight !== null ? jigRight : (c + 1) % 3 === 0);
       addLine(c + 1, r, c + 1, r + 1, isBoundary);
+      if (isBoundary && rightIdx !== undefined) addRegionPatch(i, rightIdx, true, r, c);
       drawnLines.add(lineKeyRight);
     }
 
@@ -338,15 +388,16 @@ function buildBoardDom(board) {
     const bottomCell = `${r + 1},${c}`;
     const lineKeyBottom = `h${r + 1},${c}`;
     if (!drawnLines.has(lineKeyBottom)) {
-      const hasBottomNeighbor = cellPositions.has(bottomCell);
+      const bottomIdx = cellAt.get(bottomCell);
       const jigBottom = jigsawEdge(`${r},${c}`, bottomCell);
-      const isBoundary = !hasBottomNeighbor || (jigBottom !== null ? jigBottom : (r + 1) % 3 === 0);
+      const isBoundary = bottomIdx === undefined || (jigBottom !== null ? jigBottom : (r + 1) % 3 === 0);
       addLine(c, r + 1, c + 1, r + 1, isBoundary);
+      if (isBoundary && bottomIdx !== undefined) addRegionPatch(i, bottomIdx, false, r, c);
       drawnLines.add(lineKeyBottom);
     }
 
     // Outer edges: the board's own perimeter
-    if (!cellPositions.has(`${r},${c - 1}`)) {
+    if (!cellAt.has(`${r},${c - 1}`)) {
       const lineKey = `left${r},${c}`;
       if (!drawnLines.has(lineKey)) {
         addLine(c, r, c, r + 1, true);
@@ -354,7 +405,7 @@ function buildBoardDom(board) {
       }
     }
 
-    if (!cellPositions.has(`${r - 1},${c}`)) {
+    if (!cellAt.has(`${r - 1},${c}`)) {
       const lineKey = `top${r},${c}`;
       if (!drawnLines.has(lineKey)) {
         addLine(c, r, c + 1, r, true);
@@ -364,19 +415,14 @@ function buildBoardDom(board) {
   }
   for (const line of thinLines) thinSvg.appendChild(line);
   for (const line of thickLines) thickSvg.appendChild(line);
-  boardEl.appendChild(thickSvg);
   boardEl.appendChild(thinSvg);
+  boardEl.appendChild(thickSvg);
+  boardEl.appendChild(patchSvg);
 
-  // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
+  // SVG overlay for the X-sudoku diagonals
   const xGrid = board.grids.find((g) => g.rule === 'x');
   if (xGrid) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'diagonal-overlay');
-    svg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
-    svg.style.position = 'absolute';
-    svg.style.inset = '0';
-    svg.style.pointerEvents = 'none';
-    svg.style.zIndex = '2';
+    const svg = makeOverlay('diagonal-overlay', LAYER_Z.diagonal);
 
     // Derived from the grid's own cells rather than hardcoded: a cell at (r, c)
     // spans (c, r) to (c + 1, r + 1) here, so the far corner is maxCol + 1 /
@@ -481,8 +527,8 @@ function startGameFromResult(result, difficulty) {
     finished: false,
   };
 
-  buildBoardDom(board);
   const visuals = computeVisuals(board, overlays, solution);
+  buildBoardDom(board, visuals);
   borders = visuals.borders;
   cellBackground = visuals.cellBackground;
   badges = visuals.badges;
@@ -569,8 +615,8 @@ function loadPersisted() {
     difficultySelect.value = state.difficulty;
     hintToggleInput.checked = !!state.hintEnabled;
 
-    buildBoardDom(board);
     const visuals = computeVisuals(board, overlays, state.solution);
+    buildBoardDom(board, visuals);
     borders = visuals.borders;
     cellBackground = visuals.cellBackground;
     badges = visuals.badges;

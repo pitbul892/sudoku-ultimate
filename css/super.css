@@ -102,13 +102,13 @@
   filter: none;
 }
 
-/* The X-sudoku diagonals are painted over the cell fills, so everything a cell
-   shows has to sit above them to stay readable. */
+/* LAYER_Z.content in super-main.js: everything a cell shows sits above the
+   lines, diagonals and region patches drawn over the cell fills. */
 .scell .value,
 .scell .notes,
 .cage-badge {
   position: relative;
-  z-index: 3;
+  z-index: 6;
 }
 
 .cage-badge {
@@ -134,8 +134,8 @@
 .edge-marker {
   position: absolute;
   pointer-events: none;
-  /* Above the diagonal overlay, same as the digits. */
-  z-index: 3;
+  /* LAYER_Z.marker in super-main.js: above the thick borders. */
+  z-index: 4;
 }
 
 .edge-marker.bridge {
