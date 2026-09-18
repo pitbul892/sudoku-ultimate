@@ -240,8 +240,10 @@ function buildBoardDom(board) {
   boardEl.style.gridTemplateRows = `repeat(${maxRow + 1}, minmax(0, 1fr))`;
 
   cellButtons = new Array(board.cellCount);
+  const cellPositions = new Set();
   for (let i = 0; i < board.cellCount; i++) {
     const [r, c] = board.cellCoords[i];
+    cellPositions.add(`${r},${c}`);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'cell scell';
@@ -252,6 +254,89 @@ function buildBoardDom(board) {
     boardEl.appendChild(btn);
     cellButtons[i] = btn;
   }
+
+  // SVG grid overlay: draw lines between and around cells
+  const gridSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  gridSvg.setAttribute('class', 'grid-overlay');
+  gridSvg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
+  gridSvg.style.position = 'absolute';
+  gridSvg.style.inset = '0';
+  gridSvg.style.pointerEvents = 'none';
+  gridSvg.style.zIndex = '1';
+
+  const drawnLines = new Set(); // Track lines to avoid duplicates
+
+  for (let i = 0; i < board.cellCount; i++) {
+    const [r, c] = board.cellCoords[i];
+
+    // Right edge: draw line between this cell and next, or outer border if no neighbor
+    const rightCell = `${r},${c + 1}`;
+    const lineKeyRight = `v${r},${c + 1}`;
+    if (!drawnLines.has(lineKeyRight)) {
+      if (cellPositions.has(rightCell) || !cellPositions.has(`${r},${c - 1}`)) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(c + 1));
+        line.setAttribute('y1', String(r));
+        line.setAttribute('x2', String(c + 1));
+        line.setAttribute('y2', String(r + 1));
+        const isBoundary = (c + 1) % 3 === 0 || !cellPositions.has(rightCell);
+        line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+        line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+        gridSvg.appendChild(line);
+        drawnLines.add(lineKeyRight);
+      }
+    }
+
+    // Bottom edge: draw line between this cell and next, or outer border if no neighbor
+    const bottomCell = `${r + 1},${c}`;
+    const lineKeyBottom = `h${r + 1},${c}`;
+    if (!drawnLines.has(lineKeyBottom)) {
+      if (cellPositions.has(bottomCell) || !cellPositions.has(`${r - 1},${c}`)) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(c));
+        line.setAttribute('y1', String(r + 1));
+        line.setAttribute('x2', String(c + 1));
+        line.setAttribute('y2', String(r + 1));
+        const isBoundary = (r + 1) % 3 === 0 || !cellPositions.has(bottomCell);
+        line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+        line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
+        gridSvg.appendChild(line);
+        drawnLines.add(lineKeyBottom);
+      }
+    }
+
+    // Outer edges: draw borders on perimeter
+    if (!cellPositions.has(`${r},${c - 1}`)) {
+      const lineKey = `left${r},${c}`;
+      if (!drawnLines.has(lineKey)) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(c));
+        line.setAttribute('y1', String(r));
+        line.setAttribute('x2', String(c));
+        line.setAttribute('y2', String(r + 1));
+        line.setAttribute('stroke', BORDER_COLOR);
+        line.setAttribute('stroke-width', '0.12');
+        gridSvg.appendChild(line);
+        drawnLines.add(lineKey);
+      }
+    }
+
+    if (!cellPositions.has(`${r - 1},${c}`)) {
+      const lineKey = `top${r},${c}`;
+      if (!drawnLines.has(lineKey)) {
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', String(c));
+        line.setAttribute('y1', String(r));
+        line.setAttribute('x2', String(c + 1));
+        line.setAttribute('y2', String(r));
+        line.setAttribute('stroke', BORDER_COLOR);
+        line.setAttribute('stroke-width', '0.12');
+        gridSvg.appendChild(line);
+        drawnLines.add(lineKey);
+      }
+    }
+  }
+  boardEl.appendChild(gridSvg);
 
   // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
   const xGrid = board.grids.find((g) => g.rule === 'x');
@@ -603,20 +688,13 @@ function render() {
 
     el.className = 'cell scell';
     el.style.backgroundColor = cellBackground[i];
-    // Hint dimming: semi-transparent gray overlay (X-sudoku diagonals are now SVG lines)
+    // Hint dimming: semi-transparent gray overlay
     el.style.backgroundImage = isDimmed
       ? `linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`
       : 'none';
 
-    // Real borders (not box-shadow) so lines are continuous: `right`/`bottom`
-    // always draw (thick at a boundary, thin otherwise), while `left`/`top`
-    // only ever draw at a grid's true outer edge — its neighbor on that side
-    // already supplies the line otherwise, so drawing both would double it.
-    const b = borders[i];
-    el.style.borderRight = b.right ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
-    el.style.borderBottom = b.bottom ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
-    el.style.borderLeft = b.left ? `3px solid ${BORDER_COLOR}` : '0';
-    el.style.borderTop = b.top ? `3px solid ${BORDER_COLOR}` : '0';
+    // Grid lines are drawn via SVG overlay, not cell borders
+    el.style.border = 'none';
     el.style.boxShadow = 'none';
 
     el.innerHTML = '';
