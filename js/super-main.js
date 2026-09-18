@@ -66,6 +66,7 @@ let worker = null;
 let state = null;
 let timerHandle = null;
 let cellButtons = null; // global cell index -> button element
+let borders = null; // global cell index -> {top,right,bottom,left}
 let cellBackground = null; // global cell index -> css color
 let badges = null; // global cell index -> small clue string (killer cage sum) or null
 let diagonalLines = null; // global cell index -> 'main' | 'anti' | null (x-sudoku diagonal line)
@@ -108,8 +109,62 @@ function colorCages(cages) {
   return colorOf;
 }
 
+function boxIdInGrid(board, grid, local) {
+  if (grid.rule === 'irregular') return board.jigsawByGrid[grid.id][local];
+  const r = Math.floor(local / 9);
+  const c = local % 9;
+  return Math.floor(r / 3) * 3 + Math.floor(c / 3);
+}
+
+// A shared cell's neighbor "outward" from one grid is often still inside the
+// SAME box from the OTHER owning grid's perspective (the two grids touch by
+// sharing a whole 3x3 box, not just the one corner point) — so a cell's own
+// r===0/c===8/etc. is not reliable evidence of a true boundary there. This
+// checks real adjacency instead: two cells need a border between them only if
+// every grid that owns both of them disagrees about the box, and an edge is
+// the board's true outer edge only when no cell exists on the other side at
+// all. This is also what fixes the earlier "isolated single cell" bug: the
+// exact point where two grids' corner boxes touch is fully interior to both
+// grids' own box there, so neither side ever gets a line.
+function computeBorders(board) {
+  const count = board.cellCount;
+  const coordIndex = new Map();
+  board.cellCoords.forEach(([r, c], i) => coordIndex.set(`${r},${c}`, i));
+
+  const isBoundary = (g, neighborIdx) => {
+    if (neighborIdx === undefined) return true;
+    let sharedOwner = false;
+    for (const { gridId, local } of board.cellOwners[g]) {
+      const ownerN = board.cellOwners[neighborIdx].find((o) => o.gridId === gridId);
+      if (!ownerN) continue;
+      sharedOwner = true;
+      const grid = board.grids.find((gr) => gr.id === gridId);
+      if (boxIdInGrid(board, grid, local) === boxIdInGrid(board, grid, ownerN.local)) return false;
+    }
+    return sharedOwner;
+  };
+
+  const borders = Array.from({ length: count }, () => ({ top: false, right: false, bottom: false, left: false }));
+  for (let g = 0; g < count; g++) {
+    const [r, c] = board.cellCoords[g];
+    // Only draw borders between cells that actually exist, never into empty space
+    // Right/bottom check if there's a boundary OR a neighboring cell
+    const rightNeighbor = coordIndex.get(`${r},${c + 1}`);
+    borders[g].right = rightNeighbor !== undefined && isBoundary(g, rightNeighbor);
+
+    const bottomNeighbor = coordIndex.get(`${r + 1},${c}`);
+    borders[g].bottom = bottomNeighbor !== undefined && isBoundary(g, bottomNeighbor);
+
+    // Left/top: only mark if there's actually a neighbor (never outer edge)
+    borders[g].left = false;
+    borders[g].top = false;
+  }
+  return borders;
+}
+
 function computeVisuals(board, overlays, solution) {
   const count = board.cellCount;
+  const localBorders = computeBorders(board);
   const bg = new Array(count).fill(null);
   const badgeMap = new Array(count).fill(null);
   const markerMap = Array.from({ length: count }, () => []);
@@ -170,7 +225,7 @@ function computeVisuals(board, overlays, solution) {
     bg[red] = SUM_RED_COLOR;
   }
 
-  return { cellBackground: bg, badges: badgeMap, diagonalLines, markers: markerMap };
+  return { borders: localBorders, cellBackground: bg, badges: badgeMap, diagonalLines, markers: markerMap };
 }
 
 function buildBoardDom(board) {
@@ -198,42 +253,18 @@ function buildBoardDom(board) {
     cellButtons[i] = btn;
   }
 
-  // SVG overlay for grid lines and special elements
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'grid-overlay');
-  svg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
-  svg.style.position = 'absolute';
-  svg.style.inset = '0';
-  svg.style.pointerEvents = 'none';
-  svg.style.zIndex = '2';
-
-  // Draw all grid lines (thin lines at every cell edge, thick at every 3-cell boundary)
-  // Horizontal lines
-  for (let r = 0; r <= maxRow; r++) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', '0');
-    line.setAttribute('y1', String(r));
-    line.setAttribute('x2', String(maxCol));
-    line.setAttribute('y2', String(r));
-    line.setAttribute('stroke', r % 3 === 0 ? '#4f46e5' : 'var(--border)');
-    line.setAttribute('stroke-width', r % 3 === 0 ? '0.15' : '0.05');
-    svg.appendChild(line);
-  }
-  // Vertical lines
-  for (let c = 0; c <= maxCol; c++) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', String(c));
-    line.setAttribute('y1', '0');
-    line.setAttribute('x2', String(c));
-    line.setAttribute('y2', String(maxRow));
-    line.setAttribute('stroke', c % 3 === 0 ? '#4f46e5' : 'var(--border)');
-    line.setAttribute('stroke-width', c % 3 === 0 ? '0.15' : '0.05');
-    svg.appendChild(line);
-  }
-
-  // X-sudoku diagonal lines (rows 18-26, cols 6-14)
+  // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
   const xGrid = board.grids.find((g) => g.rule === 'x');
   if (xGrid) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'diagonal-overlay');
+    svg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
+    svg.style.position = 'absolute';
+    svg.style.inset = '0';
+    svg.style.pointerEvents = 'none';
+    svg.style.zIndex = '2';
+
+    // X-sudoku: rows 18-26, cols 6-14 (0-indexed)
     // Main diagonal: (6,18) to (14,26)
     const main = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     main.setAttribute('x1', '6');
@@ -241,7 +272,7 @@ function buildBoardDom(board) {
     main.setAttribute('x2', '14');
     main.setAttribute('y2', '26');
     main.setAttribute('stroke', '#dc2626');
-    main.setAttribute('stroke-width', '0.15');
+    main.setAttribute('stroke-width', '0.2');
     svg.appendChild(main);
 
     // Anti-diagonal: (14,18) to (6,26)
@@ -251,11 +282,11 @@ function buildBoardDom(board) {
     anti.setAttribute('x2', '6');
     anti.setAttribute('y2', '26');
     anti.setAttribute('stroke', '#dc2626');
-    anti.setAttribute('stroke-width', '0.15');
+    anti.setAttribute('stroke-width', '0.2');
     svg.appendChild(anti);
-  }
 
-  boardEl.appendChild(svg);
+    boardEl.appendChild(svg);
+  }
 }
 
 function buildNumpad() {
@@ -327,6 +358,7 @@ function startGameFromResult(result, difficulty) {
 
   buildBoardDom(board);
   const visuals = computeVisuals(board, overlays, solution);
+  borders = visuals.borders;
   cellBackground = visuals.cellBackground;
   badges = visuals.badges;
   diagonalLines = visuals.diagonalLines;
@@ -414,6 +446,7 @@ function loadPersisted() {
 
     buildBoardDom(board);
     const visuals = computeVisuals(board, overlays, state.solution);
+    borders = visuals.borders;
     cellBackground = visuals.cellBackground;
     badges = visuals.badges;
     diagonalLines = visuals.diagonalLines;
@@ -570,13 +603,21 @@ function render() {
 
     el.className = 'cell scell';
     el.style.backgroundColor = cellBackground[i];
-    // Hint dimming: semi-transparent gray overlay (all grid lines are now SVG)
+    // Hint dimming: semi-transparent gray overlay (X-sudoku diagonals are now SVG lines)
     el.style.backgroundImage = isDimmed
       ? `linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`
       : 'none';
 
-    // Borders drawn via SVG overlay, not on cells
-    el.style.border = 'none';
+    // Real borders (not box-shadow) so lines are continuous: `right`/`bottom`
+    // always draw (thick at a boundary, thin otherwise), while `left`/`top`
+    // only ever draw at a grid's true outer edge — its neighbor on that side
+    // already supplies the line otherwise, so drawing both would double it.
+    const b = borders[i];
+    el.style.borderRight = b.right ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
+    el.style.borderBottom = b.bottom ? `3px solid ${BORDER_COLOR}` : '1px solid var(--border)';
+    el.style.borderLeft = b.left ? `3px solid ${BORDER_COLOR}` : '0';
+    el.style.borderTop = b.top ? `3px solid ${BORDER_COLOR}` : '0';
+    el.style.boxShadow = 'none';
 
     el.innerHTML = '';
 

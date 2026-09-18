@@ -64,13 +64,14 @@
 .super-board {
   display: grid;
   gap: 0;
-  background: var(--bg);
+  background: white;
   border: 2px solid var(--border);
   border-radius: 10px;
   width: 100%;
   min-width: 620px;
   aspect-ratio: 1 / 1;
   overflow: hidden;
+  isolation: isolate;
 }
 
 .scell {
