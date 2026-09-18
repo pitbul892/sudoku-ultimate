@@ -806,26 +806,4 @@ export function unavailableCellsForValue(board, grid, value) {
   return { unavailable, sources: new Set(sources) };
 }
 
-// Same idea, but scoped to a single grid's own row/col/box/etc. groups only —
-// a shared cell's peers from the OTHER grid it also belongs to are ignored.
-// Marks every peer (filled or empty) as unavailable, not just empty ones.
-export function unavailableCellsForValueInGrid(board, grid, value, gridId) {
-  const targetGrid = board.grids.find((g) => g.id === gridId);
-  const sources = [];
-  for (let local = 0; local < 81; local++) {
-    const g = targetGrid.cellIndex[local];
-    if (grid[g] === value) sources.push(g);
-  }
-
-  const unavailable = new Set();
-  for (const sourceIndex of sources) {
-    for (const group of board.cellGroups[sourceIndex]) {
-      if (group.gridId !== gridId) continue;
-      for (const cell of group.cells) unavailable.add(cell);
-    }
-  }
-  for (const s of sources) unavailable.delete(s);
-  return { unavailable, sources: new Set(sources) };
-}
-
 export { LOCAL_SIZE };

@@ -1,4 +1,4 @@
-import { GRID_DEFS, unavailableCellsForValueInGrid } from './supersudoku.js';
+import { GRID_DEFS, unavailableCellsForValue } from './supersudoku.js';
 
 // Board/overlays/solution are only written once per game (large payload); the
 // frequently-changing progress (grid, notes, timer, ...) is written separately
@@ -525,8 +525,6 @@ function startGameFromResult(result, difficulty) {
     seconds: 0,
     running: true,
     digitLens: null,
-    digitLensCell: null,
-    digitLensGridId: null,
     hintEnabled: hintToggleInput.checked,
     history: [],
     difficulty,
@@ -581,8 +579,6 @@ function persistProgress() {
         notesMode: state.notesMode,
         seconds: state.seconds,
         digitLens: state.digitLens,
-        digitLensCell: state.digitLensCell,
-        digitLensGridId: state.digitLensGridId,
         hintEnabled: state.hintEnabled,
         history: state.history,
         difficulty: state.difficulty,
@@ -657,17 +653,8 @@ function onCellClick(index) {
   if (!state || state.finished) return;
   const value = state.grid[index];
   if (state.hintEnabled && value !== 0) {
-    // Toggle off only when clicking the exact same cell again — a different
-    // cell with the same digit value re-targets the lens to ITS grid instead.
-    if (state.digitLensCell === index) {
-      state.digitLens = null;
-      state.digitLensCell = null;
-      state.digitLensGridId = null;
-    } else {
-      state.digitLens = value;
-      state.digitLensCell = index;
-      state.digitLensGridId = state.board.cellOwners[index][0].gridId;
-    }
+    // Toggle the "unavailable cells" lens for this digit on/off.
+    state.digitLens = state.digitLens === value ? null : value;
     state.selected = index;
     render();
     return;
@@ -763,8 +750,8 @@ function render() {
   // empty — as unavailable, not just empty cells.
   let unavailable = new Set();
   let sources = new Set();
-  if (state.hintEnabled && state.digitLens !== null && state.digitLensGridId) {
-    const result = unavailableCellsForValueInGrid(state.board, state.grid, state.digitLens, state.digitLensGridId);
+  if (state.hintEnabled && state.digitLens !== null) {
+    const result = unavailableCellsForValue(state.board, state.grid, state.digitLens);
     unavailable = result.unavailable;
     sources = result.sources;
   }
