@@ -1,6 +1,17 @@
 // Super Sudoku engine: 8 interlocking 9x9 sudoku variants arranged in a ring,
-// each overlapping its two neighbors by one shared 3x3 box, with an unused hole
-// in the middle — same macro-shape as the "Super Sudoku" community puzzle.
+// where EVERY pair of ring-neighbors overlaps in exactly one shared 3x3 box
+// (a single-corner touch, like classic Samurai Sudoku's hub/corner overlaps) —
+// never a full shared edge. There is no 9th "hub" grid; the 8 grids touch each
+// other directly, tracing a closed diamond-shaped ring with an unused hole
+// in the middle.
+//
+// Derivation: two 3-box-wide grids overlap in exactly one corner box iff their
+// origins differ by exactly (±2,±2) box-units (both dimensions offset by 2 —
+// an offset of (±2,0) or (0,±2) instead would share a full 3-box edge, which
+// is exactly what we must avoid). Walking 8 such diagonal steps in the order
+// ++, ++, +-, +-, --, --, -+, -+ traces a closed loop (a rhombus/diamond) that
+// visits 8 distinct box-positions with no accidental overlaps between
+// non-neighboring grids — verified against every non-consecutive pair.
 //
 // Every sub-grid always requires its own 9 rows + 9 columns + 9 boxes (or, for the
 // "irregular" grid, 9 jigsaw regions instead of boxes) to contain 1-9 exactly once.
@@ -11,41 +22,41 @@
 const LOCAL_SIZE = 9;
 
 // Grid metadata: id, display name, short rule text, top-left cell origin on the
-// shared 27x27 canvas (see README for the derivation), and its rule type.
+// shared canvas (cell units = box-units * 3; see derivation above), rule type.
 export const GRID_DEFS = [
   {
     id: 'standard',
     name: 'Обычное Судоку',
     rule: 'standard',
-    origin: [0, 6],
+    origin: [0, 12],
     hint: 'Ничего особенного — обычные правила судоку.',
   },
   {
     id: 'sum',
     name: 'Судоку на Сложение',
     rule: 'sum',
-    origin: [0, 12],
+    origin: [6, 18],
     hint: 'Сумма чисел в выделенной группе клеток равна числу-подсказке рядом с ней.',
   },
   {
     id: 'consecutive',
     name: 'Последовательное Судоку',
     rule: 'consecutive',
-    origin: [6, 18],
+    origin: [12, 24],
     hint: 'Розовый мостик между клетками означает, что их числа соседние (отличаются на 1).',
   },
   {
     id: 'irregular',
     name: 'Нестандартные Блоки',
     rule: 'irregular',
-    origin: [12, 18],
+    origin: [18, 18],
     hint: 'Вместо квадратов 3×3 — фигурные блоки. Правила те же: каждая фигура содержит 1-9.',
   },
   {
     id: 'offset',
     name: 'Смещённое Судоку',
     rule: 'offset',
-    origin: [18, 12],
+    origin: [24, 12],
     hint: 'Дополнительно: клетки одного цвета (одинаковая позиция внутри своего квадрата) тоже содержат 1-9.',
   },
   {
@@ -66,7 +77,7 @@ export const GRID_DEFS = [
     id: 'greater',
     name: '>Судоку<',
     rule: 'greater',
-    origin: [6, 0],
+    origin: [6, 6],
     hint: 'Знаки «больше»/«меньше» между соседними клетками должны быть верными.',
   },
 ];
