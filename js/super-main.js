@@ -39,6 +39,9 @@ const DIAGONAL_LINE_COLOR = '#dc2626';
 const X_DIAGONAL_CELL_COLOR = 'rgba(220,38,38,0.28)';
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
+// Its own colour rather than --border, which is the light tint used for panel
+// edges and is too faint to separate cells against a filled background.
+const THIN_LINE_COLOR = '#b6bccf';
 const THIN_W = 0.05;
 const THICK_W = 0.12;
 // Painted over the cell fills, bottom to top. The marker and content values are
@@ -336,8 +339,11 @@ function buildBoardDom(board, visuals) {
     line.setAttribute('y1', String(y1));
     line.setAttribute('x2', String(x2));
     line.setAttribute('y2', String(y2));
-    line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
+    line.setAttribute('stroke', isBoundary ? BORDER_COLOR : THIN_LINE_COLOR);
     line.setAttribute('stroke-width', isBoundary ? String(THICK_W) : String(THIN_W));
+    // Thick borders are drawn one cell edge at a time, so butt ends leave the
+    // half-width square at every corner unpainted. Square caps fill it.
+    if (isBoundary) line.setAttribute('stroke-linecap', 'square');
     (isBoundary ? thickLines : thinLines).push(line);
   };
 
