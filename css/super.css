@@ -64,6 +64,10 @@
 .super-board {
   display: grid;
   gap: 0;
+  /* The SVG overlays use inset: 0, so they need this to resolve against the
+     board's padding box. Without it they stretched over .board-wrap and spread
+     the same column count across the 2px border too, drifting off the cells. */
+  position: relative;
   background: white;
   border: 2px solid var(--border);
   border-radius: 10px;
@@ -110,11 +114,15 @@
 .cage-badge {
   position: absolute;
   top: 1px;
-  left: 2px;
-  font-size: clamp(6px, 1.3vw, 9px);
+  left: 1px;
+  /* Two-digit sums share a ~20px cell with the centred digit, which paints over
+     them, so they stay small and tucked into the corner. */
+  font-size: clamp(5px, 0.95vw, 7px);
   font-weight: 700;
   color: #4c1d95;
   line-height: 1;
+  letter-spacing: -0.03em;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
   pointer-events: none;
 }
 
