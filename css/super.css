@@ -76,6 +76,7 @@
 .scell {
   font-size: clamp(9px, 1.8vw, 13px);
   position: relative;
+  aspect-ratio: 1 / 1;
 }
 
 .scell .notes span {

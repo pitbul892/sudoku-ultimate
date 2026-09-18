@@ -195,23 +195,9 @@ function computeVisuals(board, overlays, solution) {
     }
   }
 
-  // The X-sudoku diagonals are a thin line (not a fill) confined to this
-  // grid's own 81 cells, skipping any diagonal cell shared with "killer" or
-  // "offset" (the shared region is a whole 3x3 box, and the diagonal crosses
-  // 3 cells of each — checked via real ownership, not guessed coordinates) so
-  // the line never bleeds into, or fights the color of, a neighboring grid.
+  // X-sudoku diagonals are now drawn as SVG lines in buildBoardDom, not cell fills.
+  // So diagonalLines is no longer used; return empty array to keep interface stable.
   const diagonalLines = new Array(count).fill(null);
-  const xGrid = board.grids.find((g) => g.rule === 'x');
-  if (xGrid) {
-    for (let i = 0; i < 81; i++) {
-      const r = Math.floor(i / 9);
-      const c = i % 9;
-      const g = xGrid.cellIndex[i];
-      if (board.cellOwners[g].length > 1) continue;
-      if (r === c) diagonalLines[g] = 'main';
-      else if (r + c === 8) diagonalLines[g] = 'anti';
-    }
-  }
 
   for (const key of overlays.consecutiveEdges) {
     const [a, b] = key.split(':').map(Number);
@@ -262,6 +248,41 @@ function buildBoardDom(board) {
     btn.addEventListener('click', () => onCellClick(i));
     boardEl.appendChild(btn);
     cellButtons[i] = btn;
+  }
+
+  // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
+  const xGrid = board.grids.find((g) => g.rule === 'x');
+  if (xGrid) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'diagonal-overlay');
+    svg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
+    svg.style.position = 'absolute';
+    svg.style.inset = '0';
+    svg.style.pointerEvents = 'none';
+    svg.style.zIndex = '2';
+
+    // X-sudoku: rows 18-26, cols 6-14 (0-indexed)
+    // Main diagonal: (6,18) to (14,26)
+    const main = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    main.setAttribute('x1', '6');
+    main.setAttribute('y1', '18');
+    main.setAttribute('x2', '14');
+    main.setAttribute('y2', '26');
+    main.setAttribute('stroke', '#dc2626');
+    main.setAttribute('stroke-width', '0.2');
+    svg.appendChild(main);
+
+    // Anti-diagonal: (14,18) to (6,26)
+    const anti = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    anti.setAttribute('x1', '14');
+    anti.setAttribute('y1', '18');
+    anti.setAttribute('x2', '6');
+    anti.setAttribute('y2', '26');
+    anti.setAttribute('stroke', '#dc2626');
+    anti.setAttribute('stroke-width', '0.2');
+    svg.appendChild(anti);
+
+    boardEl.appendChild(svg);
   }
 }
 
@@ -579,23 +600,10 @@ function render() {
 
     el.className = 'cell scell';
     el.style.backgroundColor = cellBackground[i];
-
-    // Layered background images: the hint-dimming gray (on top, so it stays
-    // visible even over the diagonal line) and/or the X-sudoku thin diagonal
-    // line, drawn as a narrow band across the cell rather than a solid fill
-    // so the cell's own color still shows through on either side of it.
-    const bgLayers = [];
-    if (isDimmed) bgLayers.push(`linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`);
-    if (diagonalLines[i] === 'main') {
-      bgLayers.push(
-        `linear-gradient(to bottom right, transparent calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% + 1.5px), transparent calc(50% + 1.5px))`
-      );
-    } else if (diagonalLines[i] === 'anti') {
-      bgLayers.push(
-        `linear-gradient(to top right, transparent calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% + 1.5px), transparent calc(50% + 1.5px))`
-      );
-    }
-    el.style.backgroundImage = bgLayers.length ? bgLayers.join(', ') : 'none';
+    // Hint dimming: semi-transparent gray overlay (X-sudoku diagonals are now SVG lines)
+    el.style.backgroundImage = isDimmed
+      ? `linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`
+      : 'none';
 
     // Real borders (not box-shadow) so lines are continuous: `right`/`bottom`
     // always draw (thick at a boundary, thin otherwise), while `left`/`top`
