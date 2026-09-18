@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Sudoku Ultimate</title>
+<meta name="description" content="Классическая игра судоку с подсказками, заметками и таймером." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2218%22 fill=%22%236366f1%22/><text x=%2250%22 y=%2268%22 font-size=%2260%22 text-anchor=%22middle%22 fill=%22white%22 font-family=%22sans-serif%22>9</text></svg>" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>Sudoku Ultimate</h1>
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">Время</span>
+        <span id="timer" class="stat-value">00:00</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Ошибки</span>
+        <span id="mistakes" class="stat-value">0/3</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="controls">
+    <label class="field">
+      <span>Сложность</span>
+      <select id="difficulty">
+        <option value="easy">Лёгкая</option>
+        <option value="medium" selected>Средняя</option>
+        <option value="hard">Сложная</option>
+        <option value="expert">Эксперт</option>
+      </select>
+    </label>
+    <button id="new-game" class="btn primary">Новая игра</button>
+  </div>
+
+  <main class="board" id="board" role="grid" aria-label="Игровое поле судоку"></main>
+
+  <div class="toolbar">
+    <button id="undo" class="btn" title="Отменить">↺ Отменить</button>
+    <button id="erase" class="btn" title="Стереть">⌫ Стереть</button>
+    <button id="notes-toggle" class="btn" title="Режим заметок">✎ Заметки</button>
+  </div>
+
+  <div id="numpad" class="numpad"></div>
+
+  <div class="hint-panel">
+    <label class="switch">
+      <input type="checkbox" id="hint-toggle" />
+      <span class="slider"></span>
+    </label>
+    <div class="hint-text">
+      <strong>Подсказка «недоступные клетки»</strong>
+      <p>Когда включено — нажмите на уже поставленную цифру, и клетки, куда её нельзя поставить, затемнятся.</p>
+    </div>
+  </div>
+</div>
+
+<div id="win-modal" class="modal">
+  <div class="modal-card">
+    <h2>Поздравляем! 🎉</h2>
+    <p>Судоку решено верно.</p>
+    <p>Время: <span id="win-time"></span> · Ошибки: <span id="win-mistakes"></span></p>
+    <button id="play-again" class="btn primary">Играть ещё раз</button>
+  </div>
+</div>
+
+<div id="lose-modal" class="modal">
+  <div class="modal-card">
+    <h2>Игра окончена</h2>
+    <p>Слишком много ошибок (3/3).</p>
+    <button id="try-again" class="btn primary">Попробовать снова</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
