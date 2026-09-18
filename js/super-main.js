@@ -268,17 +268,21 @@ function buildBoardDom(board) {
     cellButtons[i] = btn;
   }
 
-  // SVG grid overlay: draw lines between and around cells
-  const gridSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  gridSvg.setAttribute('class', 'grid-overlay');
-  gridSvg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
-  gridSvg.style.position = 'absolute';
-  gridSvg.style.inset = '0';
-  gridSvg.style.pointerEvents = 'none';
-  // Under the cells, so a cage or sum group keeps its colour across a thick
-  // border instead of being cut by it. Every cell fill is translucent, so the
-  // border still reads through the colour.
-  gridSvg.style.zIndex = '-1';
+  // Two overlays, because the two line weights sit on opposite sides of the
+  // cells: a block colour is meant to carry across a thick border (which stays
+  // visible through the translucent fill) but to stop at every thin one.
+  const makeOverlay = (className, zIndex) => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', className);
+    svg.setAttribute('viewBox', `0 0 ${maxCol + 1} ${maxRow + 1}`);
+    svg.style.position = 'absolute';
+    svg.style.inset = '0';
+    svg.style.pointerEvents = 'none';
+    svg.style.zIndex = zIndex;
+    return svg;
+  };
+  const thickSvg = makeOverlay('grid-overlay grid-overlay-thick', '-1');
+  const thinSvg = makeOverlay('grid-overlay grid-overlay-thin', '1');
 
   const drawnLines = new Set(); // Track lines to avoid duplicates
 
@@ -303,8 +307,6 @@ function buildBoardDom(board) {
     return a !== b;
   };
 
-  // Collected by weight rather than appended as they're built: in cell order a
-  // thin line drawn later paints across a thick block border it crosses.
   const thinLines = [];
   const thickLines = [];
   const addLine = (x1, y1, x2, y2, isBoundary) => {
@@ -360,9 +362,10 @@ function buildBoardDom(board) {
       }
     }
   }
-  for (const line of thinLines) gridSvg.appendChild(line);
-  for (const line of thickLines) gridSvg.appendChild(line);
-  boardEl.appendChild(gridSvg);
+  for (const line of thinLines) thinSvg.appendChild(line);
+  for (const line of thickLines) thickSvg.appendChild(line);
+  boardEl.appendChild(thickSvg);
+  boardEl.appendChild(thinSvg);
 
   // SVG overlay for X-sudoku diagonal lines (2 full diagonals across rows 18-26, cols 6-14)
   const xGrid = board.grids.find((g) => g.rule === 'x');
