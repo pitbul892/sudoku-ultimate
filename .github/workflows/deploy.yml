@@ -16,9 +16,12 @@ concurrency:
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    # No `environment:` block here on purpose: declaring one subjects the job to
+    # that environment's protection rules (e.g. a deployment-branch restriction),
+    # which on a brand-new repo instantly rejects the run before it ever reaches
+    # a runner (conclusion: failure, no steps, no logs). It isn't required for
+    # actions/deploy-pages to work — GitHub still associates the deployment with
+    # github-pages regardless.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
