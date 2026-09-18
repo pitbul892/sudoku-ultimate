@@ -266,6 +266,27 @@ function buildBoardDom(board) {
 
   const drawnLines = new Set(); // Track lines to avoid duplicates
 
+  // The jigsaw grid's blocks don't follow the board-wide 3x3 lattice the other
+  // grids share, so for edges inside it the region map decides the thick lines.
+  const irregularGrid = board.grids.find((g) => g.rule === 'irregular');
+  const regionAt = new Map();
+  if (irregularGrid) {
+    const regions = board.jigsawByGrid[irregularGrid.id];
+    for (let i = 0; i < board.cellCount; i++) {
+      const owner = board.cellOwners[i].find((o) => o.gridId === irregularGrid.id);
+      if (!owner) continue;
+      const [r, c] = board.cellCoords[i];
+      regionAt.set(`${r},${c}`, regions[owner.local]);
+    }
+  }
+  // null = edge isn't inside the jigsaw grid, so the caller keeps the lattice rule.
+  const jigsawEdge = (aKey, bKey) => {
+    const a = regionAt.get(aKey);
+    const b = regionAt.get(bKey);
+    if (a === undefined || b === undefined) return null;
+    return a !== b;
+  };
+
   for (let i = 0; i < board.cellCount; i++) {
     const [r, c] = board.cellCoords[i];
 
@@ -279,7 +300,8 @@ function buildBoardDom(board) {
       line.setAttribute('y1', String(r));
       line.setAttribute('x2', String(c + 1));
       line.setAttribute('y2', String(r + 1));
-      const isBoundary = !hasRightNeighbor || (c + 1) % 3 === 0;
+      const jigRight = jigsawEdge(`${r},${c}`, rightCell);
+      const isBoundary = !hasRightNeighbor || (jigRight !== null ? jigRight : (c + 1) % 3 === 0);
       line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
       line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
       gridSvg.appendChild(line);
@@ -296,7 +318,8 @@ function buildBoardDom(board) {
       line.setAttribute('y1', String(r + 1));
       line.setAttribute('x2', String(c + 1));
       line.setAttribute('y2', String(r + 1));
-      const isBoundary = !hasBottomNeighbor || (r + 1) % 3 === 0;
+      const jigBottom = jigsawEdge(`${r},${c}`, bottomCell);
+      const isBoundary = !hasBottomNeighbor || (jigBottom !== null ? jigBottom : (r + 1) % 3 === 0);
       line.setAttribute('stroke', isBoundary ? BORDER_COLOR : 'var(--border)');
       line.setAttribute('stroke-width', isBoundary ? '0.12' : '0.05');
       gridSvg.appendChild(line);

@@ -175,10 +175,20 @@ function tryGenerateJigsaw(lockedBoxIds = []) {
   return region;
 }
 
+// Growth occasionally settles back into the plain 3x3 boxes it started from,
+// which would render as an ordinary grid and lose the variant entirely.
+function isPlainBoxes(region) {
+  return region.every((id, idx) => {
+    const r = Math.floor(idx / 9);
+    const c = idx % 9;
+    return id === Math.floor(r / 3) * 3 + Math.floor(c / 3);
+  });
+}
+
 export function generateJigsawRegions(lockedBoxIds = []) {
   for (let attempt = 0; attempt < 5000; attempt++) {
     const result = tryGenerateJigsaw(lockedBoxIds);
-    if (result) return result;
+    if (result && !isPlainBoxes(result)) return result;
   }
   throw new Error('Failed to generate jigsaw regions');
 }
