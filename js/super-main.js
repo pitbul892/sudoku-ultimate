@@ -16,7 +16,6 @@ const GRID_COLORS = {
   killer: 'rgba(168,85,247,0.16)',
   greater: 'rgba(20,184,166,0.16)',
 };
-const SHARED_TINT = 'rgba(245,197,66,0.26)';
 const REGION_PALETTE = [
   'rgba(16,185,129,0.22)', 'rgba(52,211,153,0.22)', 'rgba(110,231,183,0.22)',
   'rgba(6,182,212,0.20)', 'rgba(45,212,191,0.20)', 'rgba(132,204,22,0.20)',
@@ -127,10 +126,6 @@ function computeVisuals(board, overlays) {
         }
       }
     }
-  }
-
-  for (let i = 0; i < count; i++) {
-    if (board.cellOwners[i].length > 1) bg[i] = SHARED_TINT;
   }
 
   for (const key of overlays.consecutiveEdges) {
@@ -482,6 +477,10 @@ function render() {
     if (b.left) parts.push(`inset 2px 0 0 0 ${BORDER_COLOR}`);
     if (b.right) parts.push(`inset -2px 0 0 0 ${BORDER_COLOR}`);
     if (b.bottom) parts.push(`inset 0 -2px 0 0 ${BORDER_COLOR}`);
+    // Shared cells keep their real per-grid color (offset group, cage, jigsaw
+    // region, ...) instead of being flattened to one "shared" color — a ring
+    // on top is enough to flag that the cell belongs to two puzzles at once.
+    if (state.board.cellOwners[i].length > 1) parts.push('inset 0 0 0 2px #eab308');
     el.style.boxShadow = parts.join(', ');
 
     el.innerHTML = '';
