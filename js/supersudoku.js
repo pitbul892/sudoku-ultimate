@@ -131,24 +131,33 @@ function tryGenerateJigsaw(lockedBoxIds = []) {
     regionCells[id].push(idx);
   });
 
+  const candidatesFor = (id) => {
+    const candidates = new Set();
+    for (const cellIdx of regionCells[id]) {
+      const r = Math.floor(cellIdx / 9);
+      const c = cellIdx % 9;
+      const neighbors = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]];
+      for (const [nr, nc] of neighbors) {
+        if (nr < 0 || nr > 8 || nc < 0 || nc > 8) continue;
+        const nIdx = localIndex(nr, nc);
+        if (region[nIdx] === -1) candidates.add(nIdx);
+      }
+    }
+    return candidates;
+  };
+
   let remaining = 81 - regionCells.reduce((sum, cells) => sum + cells.length, 0);
   let stalled = 0;
   while (remaining > 0) {
-    const order = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8].filter((id) => !locked.has(id)));
+    const growable = shuffled([0, 1, 2, 3, 4, 5, 6, 7, 8].filter((id) => !locked.has(id) && regionCells[id].length < 9));
+    // Most-constrained-first: growing the region with the fewest options first
+    // sharply cuts how often a region gets boxed in with nowhere left to grow
+    // (the deadlock this whole retry loop exists to recover from).
+    growable.sort((a, b) => candidatesFor(a).size - candidatesFor(b).size);
     let progressed = false;
-    for (const id of order) {
+    for (const id of growable) {
       if (regionCells[id].length >= 9) continue;
-      const candidates = new Set();
-      for (const cellIdx of regionCells[id]) {
-        const r = Math.floor(cellIdx / 9);
-        const c = cellIdx % 9;
-        const neighbors = [[r - 1, c], [r + 1, c], [r, c - 1], [r, c + 1]];
-        for (const [nr, nc] of neighbors) {
-          if (nr < 0 || nr > 8 || nc < 0 || nc > 8) continue;
-          const nIdx = localIndex(nr, nc);
-          if (region[nIdx] === -1) candidates.add(nIdx);
-        }
-      }
+      const candidates = candidatesFor(id);
       if (candidates.size === 0) continue;
       const pick = shuffled([...candidates])[0];
       region[pick] = id;
@@ -167,7 +176,7 @@ function tryGenerateJigsaw(lockedBoxIds = []) {
 }
 
 export function generateJigsawRegions(lockedBoxIds = []) {
-  for (let attempt = 0; attempt < 200; attempt++) {
+  for (let attempt = 0; attempt < 5000; attempt++) {
     const result = tryGenerateJigsaw(lockedBoxIds);
     if (result) return result;
   }
@@ -208,6 +217,63 @@ export function generateCages() {
   return cages;
 }
 
+// --- Sum-triple generation (for the "sum" grid) -------------------------------
+//
+// The rule: two "blue" cells and one "red" cell in a straight run of 3, where
+// the red cell's own value equals the sum of the two blue ones (so blue1 and
+// blue2 are always <= 8, and red is a real solved digit, not a floating clue).
+
+function boxOfLocal(r, c) {
+  return Math.floor(r / 3) * 3 + Math.floor(c / 3);
+}
+
+function allNeighbors(r, c) {
+  const out = [];
+  if (r > 0) out.push([r - 1, c]);
+  if (r < 8) out.push([r + 1, c]);
+  if (c > 0) out.push([r, c - 1]);
+  if (c < 8) out.push([r, c + 1]);
+  return out;
+}
+
+// `excludedBoxId` keeps triples out of the box shared with "standard".
+export function generateSum3Triples(excludedBoxId, targetCount) {
+  const blocked = new Array(81).fill(false);
+  const order = shuffled([...Array(81).keys()]);
+  const directions = shuffled([[0, 1], [1, 0], [0, -1], [-1, 0]]);
+  const triples = [];
+
+  for (const start of order) {
+    if (triples.length >= targetCount) break;
+    if (blocked[start]) continue;
+    const r0 = Math.floor(start / 9);
+    const c0 = start % 9;
+    if (boxOfLocal(r0, c0) === excludedBoxId) continue;
+
+    for (const [dr, dc] of shuffled(directions)) {
+      const r1 = r0 + dr;
+      const c1 = c0 + dc;
+      const r2 = r0 + 2 * dr;
+      const c2 = c0 + 2 * dc;
+      if (r1 < 0 || r1 > 8 || c1 < 0 || c1 > 8 || r2 < 0 || r2 > 8 || c2 < 0 || c2 > 8) continue;
+      const i1 = r1 * 9 + c1;
+      const i2 = r2 * 9 + c2;
+      if (blocked[i1] || blocked[i2]) continue;
+      if (boxOfLocal(r1, c1) === excludedBoxId || boxOfLocal(r2, c2) === excludedBoxId) continue;
+
+      for (const cell of [start, i1, i2]) {
+        blocked[cell] = true;
+        const cr = Math.floor(cell / 9);
+        const cc = cell % 9;
+        for (const [nr, nc] of allNeighbors(cr, cc)) blocked[nr * 9 + nc] = true;
+      }
+      triples.push({ blue1: start, blue2: i1, red: i2 });
+      break;
+    }
+  }
+  return triples;
+}
+
 // --- Board assembly: merge 8 local 9x9 grids into one global cell/group set ---
 
 export function buildBoard() {
@@ -240,6 +306,7 @@ export function buildBoard() {
 
   const jigsawByGrid = {};
   const cagesByGrid = {};
+  const sum3Constraints = [];
 
   for (const grid of grids) {
     const toGlobal = (localIdxList) => localIdxList.map((li) => grid.cellIndex[li]);
@@ -313,6 +380,19 @@ export function buildBoard() {
         groups.push({ type: 'cage', gridId: grid.id, cells: toGlobal(cage) });
       }
     }
+
+    if (grid.rule === 'sum') {
+      // Box 0 (top-left, row-major) is this grid's corner shared with
+      // "standard" — kept free of triples so that corner stays uncluttered.
+      const triples = generateSum3Triples(0, 4 + Math.floor(Math.random() * 2));
+      for (const t of triples) {
+        sum3Constraints.push({
+          blue1: grid.cellIndex[t.blue1],
+          blue2: grid.cellIndex[t.blue2],
+          red: grid.cellIndex[t.red],
+        });
+      }
+    }
   }
 
   const cellCount = cellCoords.length;
@@ -335,11 +415,20 @@ export function buildBoard() {
     }
   }
 
+  const sum3ByCell = Array.from({ length: cellCount }, () => []);
+  for (const constraint of sum3Constraints) {
+    sum3ByCell[constraint.blue1].push(constraint);
+    sum3ByCell[constraint.blue2].push(constraint);
+    sum3ByCell[constraint.red].push(constraint);
+  }
+
   return {
     grids,
     groups,
     cellCoords,
     cellCount,
+    sum3Constraints,
+    sum3ByCell,
     peers: peers.map((s) => [...s]),
     cellGroups,
     cellOwners,
@@ -373,6 +462,42 @@ function digitsOf(mask) {
   const out = [];
   for (let d = 1; d <= 9; d++) if (mask & (1 << (d - 1))) out.push(d);
   return out;
+}
+
+// Arc-consistency for a "sum" grid triple: blue1 + blue2 = red. Removes any
+// candidate that could never satisfy the equation given the other two cells'
+// current domains. Called from eliminate() whenever one of the 3 cells changes.
+function enforceSum3(values, board, constraint) {
+  const { blue1, blue2, red } = constraint;
+
+  for (const d of digitsOf(values[blue1])) {
+    let ok = false;
+    for (const v2 of digitsOf(values[blue2])) {
+      const r = d + v2;
+      if (r <= 9 && values[red] & (1 << (r - 1))) { ok = true; break; }
+    }
+    if (!ok && eliminate(values, board, blue1, d) === null) return null;
+  }
+
+  for (const d of digitsOf(values[blue2])) {
+    let ok = false;
+    for (const v1 of digitsOf(values[blue1])) {
+      const r = v1 + d;
+      if (r <= 9 && values[red] & (1 << (r - 1))) { ok = true; break; }
+    }
+    if (!ok && eliminate(values, board, blue2, d) === null) return null;
+  }
+
+  for (const d of digitsOf(values[red])) {
+    let ok = false;
+    for (const v1 of digitsOf(values[blue1])) {
+      const v2 = d - v1;
+      if (v2 >= 1 && values[blue2] & (1 << (v2 - 1))) { ok = true; break; }
+    }
+    if (!ok && eliminate(values, board, red, d) === null) return null;
+  }
+
+  return values;
 }
 
 // Eliminates `d` as a possibility for cell `s`, cascading naked singles (a cell
@@ -412,6 +537,11 @@ function eliminate(values, board, s, d) {
       if (assign(values, board, place, d) === null) return null;
     }
   }
+
+  for (const constraint of board.sum3ByCell[s]) {
+    if (enforceSum3(values, board, constraint) === null) return null;
+  }
+
   return values;
 }
 
@@ -575,26 +705,18 @@ function localNeighbors(r, c) {
   return out;
 }
 
-function allNeighbors(r, c) {
-  const out = [];
-  if (r > 0) out.push([r - 1, c]);
-  if (r < 8) out.push([r + 1, c]);
-  if (c > 0) out.push([r, c - 1]);
-  if (c < 8) out.push([r, c + 1]);
-  return out;
-}
-
-function boxOfLocal(r, c) {
-  return Math.floor(r / 3) * 3 + Math.floor(c / 3);
-}
-
 // Derives the purely-cosmetic/read-off overlays that need no generation-time
 // constraint: consecutive bridges and greater/less signs are true by construction
-// for whatever solution exists, and sum-domino targets are just read from it.
+// for whatever solution exists. Sum triples are a real constraint (see
+// generateSum3Triples/enforceSum3) — this just packages them for rendering.
 export function computeOverlays(board, bySolution) {
   const consecutiveEdges = new Set();
   const comparisonSigns = new Map();
-  const sumGroups = [];
+  const sumTriples = (board.sum3Constraints || []).map(({ blue1, blue2, red }) => ({
+    blue: [blue1, blue2],
+    red,
+    sum: bySolution[red],
+  }));
 
   const grid = (rule) => board.grids.find((g) => g.rule === rule);
 
@@ -634,41 +756,7 @@ export function computeOverlays(board, bySolution) {
     }
   }
 
-  // A handful of non-touching dominoes (never in the box shared with
-  // "standard", to keep that corner clean): each domino's own neighbors are
-  // "blocked" too so no other domino ever ends up adjacent to it.
-  const EXCLUDED_SUM_BOX = 0;
-  const sumGrid = grid('sum');
-  if (sumGrid) {
-    const blocked = new Array(81).fill(false);
-    const order = shuffled([...Array(81).keys()]);
-    const targetCount = 4 + Math.floor(Math.random() * 2); // 4 or 5
-    let placed = 0;
-    for (const local of order) {
-      if (placed >= targetCount) break;
-      if (blocked[local]) continue;
-      const r = Math.floor(local / 9);
-      const c = local % 9;
-      if (boxOfLocal(r, c) === EXCLUDED_SUM_BOX) continue;
-      const options = localNeighbors(r, c)
-        .map((n) => n.r * 9 + n.c)
-        .filter((li) => !blocked[li] && boxOfLocal(Math.floor(li / 9), li % 9) !== EXCLUDED_SUM_BOX);
-      if (options.length === 0) continue;
-      const partner = options[Math.floor(Math.random() * options.length)];
-      for (const cell of [local, partner]) {
-        blocked[cell] = true;
-        const cr = Math.floor(cell / 9);
-        const cc = cell % 9;
-        for (const [nr, nc] of allNeighbors(cr, cc)) blocked[nr * 9 + nc] = true;
-      }
-      const a = sumGrid.cellIndex[local];
-      const b = sumGrid.cellIndex[partner];
-      sumGroups.push({ cells: [a, b], sum: bySolution[a] + bySolution[b] });
-      placed++;
-    }
-  }
-
-  return { consecutiveEdges, comparisonSigns, sumGroups };
+  return { consecutiveEdges, comparisonSigns, sumTriples };
 }
 
 // Returns, for a given digit, the set of empty global cell indices where it can no

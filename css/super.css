@@ -82,26 +82,11 @@
   font-size: clamp(5px, 1vw, 6.5px);
 }
 
-.cage-badge {
-  position: absolute;
-  top: 1px;
-  left: 2px;
-  font-size: clamp(5px, 1vw, 7px);
-  color: var(--text-dim);
-  font-weight: 700;
-  line-height: 1;
-  pointer-events: none;
-}
-
-.grid-number {
-  position: absolute;
-  top: 1px;
-  right: 2px;
-  font-size: clamp(6px, 1.3vw, 9px);
-  font-weight: 800;
-  color: var(--accent-2);
-  line-height: 1;
-  pointer-events: none;
+/* The shared .cell.dimmed rule (style.css) uses a filter, which would darken
+   a cell's own color instead of layering a translucent gray on top of it as
+   the hint overlay is drawn here (see render()'s backgroundImage). */
+.scell.dimmed {
+  filter: none;
 }
 
 .debug-btn {
@@ -136,8 +121,8 @@
 }
 
 .edge-marker.sign {
-  color: #000;
-  font-weight: 800;
+  color: #6b7280;
+  font-weight: 400;
   font-size: clamp(7px, 1.6vw, 11px);
   line-height: 1;
 }
