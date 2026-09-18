@@ -27,6 +27,13 @@ const CAGE_PALETTE = [
   'rgba(232,121,249,0.20)', 'rgba(196,181,253,0.24)', 'rgba(147,51,234,0.20)',
   'rgba(233,213,255,0.26)', 'rgba(126,34,206,0.18)',
 ];
+// One color per "position class" (r%3, c%3) — cells sharing a color must also
+// contain 1-9, the extra constraint the offset/disjoint-groups variant adds.
+const OFFSET_PALETTE = [
+  'rgba(239,68,68,0.28)', 'rgba(249,115,22,0.28)', 'rgba(234,179,8,0.30)',
+  'rgba(132,204,22,0.28)', 'rgba(20,184,166,0.28)', 'rgba(59,130,246,0.26)',
+  'rgba(99,102,241,0.28)', 'rgba(217,70,239,0.26)', 'rgba(244,63,94,0.24)',
+];
 const BORDER_COLOR = 'rgba(79,70,229,0.75)';
 
 const boardEl = document.getElementById('board');
@@ -112,6 +119,9 @@ function computeVisuals(board, overlays) {
           bg[g] = CAGE_PALETTE[cageId % CAGE_PALETTE.length];
         } else if (grid.rule === 'x' && (r === c || r + c === 8)) {
           bg[g] = 'rgba(239,68,68,0.38)';
+        } else if (grid.rule === 'offset') {
+          const posClass = (r % 3) * 3 + (c % 3);
+          bg[g] = OFFSET_PALETTE[posClass];
         } else if (bg[g] === null) {
           bg[g] = GRID_COLORS[grid.rule];
         }
