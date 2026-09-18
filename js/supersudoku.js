@@ -217,11 +217,12 @@ export function generateCages() {
   return cages;
 }
 
-// --- Sum-triple generation (for the "sum" grid) -------------------------------
+// --- Sum-group generation (for the "sum" grid) --------------------------------
 //
-// The rule: two "blue" cells and one "red" cell in a straight run of 3, where
-// the red cell's own value equals the sum of the two blue ones (so blue1 and
-// blue2 are always <= 8, and red is a real solved digit, not a floating clue).
+// The rule: a connected blob of 2-4 "blue" cells plus one "red" cell, where the
+// red cell's own solved value equals the sum of the blue ones (so it's a real
+// grid digit shown via its color, never a floating clue number — the group is
+// just colored, and 9 is the hard ceiling since all cells are single digits).
 
 function boxOfLocal(r, c) {
   return Math.floor(r / 3) * 3 + Math.floor(c / 3);
@@ -236,42 +237,55 @@ function allNeighbors(r, c) {
   return out;
 }
 
-// `excludedBoxId` keeps triples out of the box shared with "standard".
-export function generateSum3Triples(excludedBoxId, targetCount) {
+// `excludedBoxId` keeps groups out of the box shared with "standard".
+export function generateSumGroups(excludedBoxId, targetCount) {
   const blocked = new Array(81).fill(false);
   const order = shuffled([...Array(81).keys()]);
-  const directions = shuffled([[0, 1], [1, 0], [0, -1], [-1, 0]]);
-  const triples = [];
+  const groups = [];
 
-  for (const start of order) {
-    if (triples.length >= targetCount) break;
-    if (blocked[start]) continue;
-    const r0 = Math.floor(start / 9);
-    const c0 = start % 9;
+  for (const red of order) {
+    if (groups.length >= targetCount) break;
+    if (blocked[red]) continue;
+    const r0 = Math.floor(red / 9);
+    const c0 = red % 9;
     if (boxOfLocal(r0, c0) === excludedBoxId) continue;
 
-    for (const [dr, dc] of shuffled(directions)) {
-      const r1 = r0 + dr;
-      const c1 = c0 + dc;
-      const r2 = r0 + 2 * dr;
-      const c2 = c0 + 2 * dc;
-      if (r1 < 0 || r1 > 8 || c1 < 0 || c1 > 8 || r2 < 0 || r2 > 8 || c2 < 0 || c2 > 8) continue;
-      const i1 = r1 * 9 + c1;
-      const i2 = r2 * 9 + c2;
-      if (blocked[i1] || blocked[i2]) continue;
-      if (boxOfLocal(r1, c1) === excludedBoxId || boxOfLocal(r2, c2) === excludedBoxId) continue;
-
-      for (const cell of [start, i1, i2]) {
-        blocked[cell] = true;
+    const blueCount = 2 + Math.floor(Math.random() * 3); // 2, 3, or 4
+    const cells = [red];
+    const claimed = new Set([red]);
+    let ok = true;
+    while (cells.length < blueCount + 1) {
+      const frontier = new Set();
+      for (const cell of cells) {
         const cr = Math.floor(cell / 9);
         const cc = cell % 9;
-        for (const [nr, nc] of allNeighbors(cr, cc)) blocked[nr * 9 + nc] = true;
+        for (const [nr, nc] of allNeighbors(cr, cc)) {
+          const ni = nr * 9 + nc;
+          if (blocked[ni] || claimed.has(ni) || boxOfLocal(nr, nc) === excludedBoxId) continue;
+          frontier.add(ni);
+        }
       }
-      triples.push({ blue1: start, blue2: i1, red: i2 });
-      break;
+      if (frontier.size === 0) {
+        ok = false;
+        break;
+      }
+      const pick = shuffled([...frontier])[0];
+      cells.push(pick);
+      claimed.add(pick);
     }
+    if (!ok) continue;
+
+    // Block the group's own cells plus a ring around them so no other group
+    // ever ends up touching this one.
+    for (const cell of cells) {
+      blocked[cell] = true;
+      const cr = Math.floor(cell / 9);
+      const cc = cell % 9;
+      for (const [nr, nc] of allNeighbors(cr, cc)) blocked[nr * 9 + nc] = true;
+    }
+    groups.push({ red, blues: cells.slice(1) });
   }
-  return triples;
+  return groups;
 }
 
 // --- Board assembly: merge 8 local 9x9 grids into one global cell/group set ---
@@ -306,7 +320,7 @@ export function buildBoard() {
 
   const jigsawByGrid = {};
   const cagesByGrid = {};
-  const sum3Constraints = [];
+  const sumConstraints = [];
 
   for (const grid of grids) {
     const toGlobal = (localIdxList) => localIdxList.map((li) => grid.cellIndex[li]);
@@ -383,13 +397,12 @@ export function buildBoard() {
 
     if (grid.rule === 'sum') {
       // Box 0 (top-left, row-major) is this grid's corner shared with
-      // "standard" — kept free of triples so that corner stays uncluttered.
-      const triples = generateSum3Triples(0, 4 + Math.floor(Math.random() * 2));
-      for (const t of triples) {
-        sum3Constraints.push({
-          blue1: grid.cellIndex[t.blue1],
-          blue2: grid.cellIndex[t.blue2],
-          red: grid.cellIndex[t.red],
+      // "standard" — kept free of groups so that corner stays uncluttered.
+      const localGroups = generateSumGroups(0, 4 + Math.floor(Math.random() * 2));
+      for (const group of localGroups) {
+        sumConstraints.push({
+          red: grid.cellIndex[group.red],
+          blues: group.blues.map((li) => grid.cellIndex[li]),
         });
       }
     }
@@ -415,11 +428,10 @@ export function buildBoard() {
     }
   }
 
-  const sum3ByCell = Array.from({ length: cellCount }, () => []);
-  for (const constraint of sum3Constraints) {
-    sum3ByCell[constraint.blue1].push(constraint);
-    sum3ByCell[constraint.blue2].push(constraint);
-    sum3ByCell[constraint.red].push(constraint);
+  const sumByCell = Array.from({ length: cellCount }, () => []);
+  for (const constraint of sumConstraints) {
+    sumByCell[constraint.red].push(constraint);
+    for (const b of constraint.blues) sumByCell[b].push(constraint);
   }
 
   return {
@@ -427,8 +439,8 @@ export function buildBoard() {
     groups,
     cellCoords,
     cellCount,
-    sum3Constraints,
-    sum3ByCell,
+    sumConstraints,
+    sumByCell,
     peers: peers.map((s) => [...s]),
     cellGroups,
     cellOwners,
@@ -464,37 +476,46 @@ function digitsOf(mask) {
   return out;
 }
 
-// Arc-consistency for a "sum" grid triple: blue1 + blue2 = red. Removes any
-// candidate that could never satisfy the equation given the other two cells'
-// current domains. Called from eliminate() whenever one of the 3 cells changes.
-function enforceSum3(values, board, constraint) {
-  const { blue1, blue2, red } = constraint;
-
-  for (const d of digitsOf(values[blue1])) {
-    let ok = false;
-    for (const v2 of digitsOf(values[blue2])) {
-      const r = d + v2;
-      if (r <= 9 && values[red] & (1 << (r - 1))) { ok = true; break; }
+// All achievable sums (capped at 9, since "red" is a single digit) of a list
+// of cells given their current candidate domains, as a bitmask (bit s = sum s
+// is reachable). Bitwise instead of Set-based: this runs on every relevant
+// eliminate() call during search, and Set churn there was measured to blow up
+// generation time (up to ~50s on some puzzles vs a couple hundred ms).
+function achievableSumsMask(values, cells) {
+  let sums = 1; // bit 0 set: sum 0 is achievable with zero cells picked so far
+  for (const cell of cells) {
+    const digitMask = values[cell]; // bit (d-1) set for each candidate digit d
+    let next = 0;
+    for (let s = 0; s <= 9; s++) {
+      if (sums & (1 << s)) next |= digitMask << (s + 1);
     }
-    if (!ok && eliminate(values, board, blue1, d) === null) return null;
+    sums = next & 0b1111111111; // keep only sum bits 0-9
   }
+  return sums;
+}
 
-  for (const d of digitsOf(values[blue2])) {
-    let ok = false;
-    for (const v1 of digitsOf(values[blue1])) {
-      const r = v1 + d;
-      if (r <= 9 && values[red] & (1 << (r - 1))) { ok = true; break; }
-    }
-    if (!ok && eliminate(values, board, blue2, d) === null) return null;
-  }
+// Arc-consistency for a "sum" grid group: blues.reduce(sum) === red (2-4
+// blues). Removes any candidate that could never satisfy the equation given
+// the other cells' current domains. Called from eliminate() whenever one of
+// the group's cells changes.
+function enforceSumGroup(values, board, constraint) {
+  const { red, blues } = constraint;
 
+  const totalSums = achievableSumsMask(values, blues);
   for (const d of digitsOf(values[red])) {
-    let ok = false;
-    for (const v1 of digitsOf(values[blue1])) {
-      const v2 = d - v1;
-      if (v2 >= 1 && values[blue2] & (1 << (v2 - 1))) { ok = true; break; }
+    if (!(totalSums & (1 << d)) && eliminate(values, board, red, d) === null) return null;
+  }
+
+  for (let i = 0; i < blues.length; i++) {
+    const cell = blues[i];
+    const others = blues.filter((_, j) => j !== i);
+    const otherSums = achievableSumsMask(values, others);
+    for (const d of digitsOf(values[cell])) {
+      // Need some achievable "others" sum os (0-9) with digit (d+os) a valid
+      // red candidate — i.e. bit os of (red's candidate mask >> (d-1)) set —
+      // so intersect that shifted mask with the achievable-sums bitmask.
+      if (!(otherSums & (values[red] >> (d - 1))) && eliminate(values, board, cell, d) === null) return null;
     }
-    if (!ok && eliminate(values, board, red, d) === null) return null;
   }
 
   return values;
@@ -538,8 +559,8 @@ function eliminate(values, board, s, d) {
     }
   }
 
-  for (const constraint of board.sum3ByCell[s]) {
-    if (enforceSum3(values, board, constraint) === null) return null;
+  for (const constraint of board.sumByCell[s]) {
+    if (enforceSumGroup(values, board, constraint) === null) return null;
   }
 
   return values;
@@ -679,8 +700,8 @@ function reduceToPuzzle(board, solution, difficulty) {
 // turns out to be pathologically slow. Cheap and robust: most random instances
 // solve in milliseconds, so a handful of retries is enough in the rare bad case.
 export function createSuperPuzzle(difficulty = 'medium', options = {}) {
-  const maxAttempts = options.maxAttempts ?? 30;
-  const nodeBudget = options.nodeBudget ?? 120000;
+  const maxAttempts = options.maxAttempts ?? 80;
+  const nodeBudget = options.nodeBudget ?? 20000;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     let board;
@@ -707,13 +728,13 @@ function localNeighbors(r, c) {
 
 // Derives the purely-cosmetic/read-off overlays that need no generation-time
 // constraint: consecutive bridges and greater/less signs are true by construction
-// for whatever solution exists. Sum triples are a real constraint (see
-// generateSum3Triples/enforceSum3) — this just packages them for rendering.
+// for whatever solution exists. Sum groups are a real constraint (see
+// generateSumGroups/enforceSumGroup) — this just packages them for rendering.
 export function computeOverlays(board, bySolution) {
   const consecutiveEdges = new Set();
   const comparisonSigns = new Map();
-  const sumTriples = (board.sum3Constraints || []).map(({ blue1, blue2, red }) => ({
-    blue: [blue1, blue2],
+  const sumGroupsForRender = (board.sumConstraints || []).map(({ red, blues }) => ({
+    blues,
     red,
     sum: bySolution[red],
   }));
@@ -756,7 +777,7 @@ export function computeOverlays(board, bySolution) {
     }
   }
 
-  return { consecutiveEdges, comparisonSigns, sumTriples };
+  return { consecutiveEdges, comparisonSigns, sumGroups: sumGroupsForRender };
 }
 
 // Returns, for a given digit, the set of empty global cell indices where it can no

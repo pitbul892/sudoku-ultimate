@@ -27,9 +27,9 @@ const NAMED_PALETTE = [
   'rgba(236,72,153,0.30)', 'rgba(163,230,53,0.40)', 'rgba(146,64,14,0.28)',
   'rgba(34,197,94,0.32)', '#ffffff', 'rgba(168,85,247,0.30)',
 ];
-const SUM_BLUE_COLOR = 'rgba(59,130,246,0.40)'; // the two addend cells
-const SUM_RED_TEXT_COLOR = '#dc2626'; // the sum cell's own digit, in red
-const DIAGONAL_FILL_COLOR = 'rgba(220,38,38,0.35)';
+const SUM_BLUE_COLOR = 'rgba(59,130,246,0.40)'; // the addend cells
+const SUM_RED_COLOR = 'rgba(220,38,38,0.40)'; // the sum cell — a colored field, not a revealed number
+const DIAGONAL_LINE_COLOR = '#dc2626'; // thin line stroke for the X-sudoku diagonals
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
 
@@ -68,7 +68,8 @@ let timerHandle = null;
 let cellButtons = null; // global cell index -> button element
 let borders = null; // global cell index -> {top,right,bottom,left}
 let cellBackground = null; // global cell index -> css color
-let cellTextColor = null; // global cell index -> digit text color override (sum's red cell)
+let badges = null; // global cell index -> small clue string (killer cage sum) or null
+let diagonalLines = null; // global cell index -> 'main' | 'anti' | null (x-sudoku diagonal line)
 let markers = null; // global cell index -> [{edge, type, char?}]
 
 function emptyNotes(count) {
@@ -108,34 +109,70 @@ function colorCages(cages) {
   return colorOf;
 }
 
-function computeVisuals(board, overlays) {
+function boxIdInGrid(board, grid, local) {
+  if (grid.rule === 'irregular') return board.jigsawByGrid[grid.id][local];
+  const r = Math.floor(local / 9);
+  const c = local % 9;
+  return Math.floor(r / 3) * 3 + Math.floor(c / 3);
+}
+
+// A shared cell's neighbor "outward" from one grid is often still inside the
+// SAME box from the OTHER owning grid's perspective (the two grids touch by
+// sharing a whole 3x3 box, not just the one corner point) — so a cell's own
+// r===0/c===8/etc. is not reliable evidence of a true boundary there. This
+// checks real adjacency instead: two cells need a border between them only if
+// every grid that owns both of them disagrees about the box, and an edge is
+// the board's true outer edge only when no cell exists on the other side at
+// all. This is also what fixes the earlier "isolated single cell" bug: the
+// exact point where two grids' corner boxes touch is fully interior to both
+// grids' own box there, so neither side ever gets a line.
+function computeBorders(board) {
   const count = board.cellCount;
-  // Only `right`/`bottom` get set for internal box/jigsaw boundaries (the
-  // mirrored `left`/`top` on the neighbor is never set) so each boundary line
-  // is drawn exactly once — drawing it from both sides doubled its thickness
-  // and made lines look broken where the two didn't quite line up.
-  const localBorders = Array.from({ length: count }, () => ({ top: false, right: false, bottom: false, left: false }));
+  const coordIndex = new Map();
+  board.cellCoords.forEach(([r, c], i) => coordIndex.set(`${r},${c}`, i));
+
+  const isBoundary = (g, neighborIdx) => {
+    if (neighborIdx === undefined) return true;
+    let sharedOwner = false;
+    for (const { gridId, local } of board.cellOwners[g]) {
+      const ownerN = board.cellOwners[neighborIdx].find((o) => o.gridId === gridId);
+      if (!ownerN) continue;
+      sharedOwner = true;
+      const grid = board.grids.find((gr) => gr.id === gridId);
+      if (boxIdInGrid(board, grid, local) === boxIdInGrid(board, grid, ownerN.local)) return false;
+    }
+    return sharedOwner;
+  };
+
+  const borders = Array.from({ length: count }, () => ({ top: false, right: false, bottom: false, left: false }));
+  for (let g = 0; g < count; g++) {
+    const [r, c] = board.cellCoords[g];
+    // Only right/bottom are derived from box-sameness; left/top only ever
+    // mark a true outer edge (no cell at all on that side) — the box-boundary
+    // case is already captured symmetrically by the neighbor's own right/
+    // bottom, and marking it again here would double the line's thickness.
+    borders[g].right = isBoundary(g, coordIndex.get(`${r},${c + 1}`));
+    borders[g].bottom = isBoundary(g, coordIndex.get(`${r + 1},${c}`));
+    borders[g].left = coordIndex.get(`${r},${c - 1}`) === undefined;
+    borders[g].top = coordIndex.get(`${r - 1},${c}`) === undefined;
+  }
+  return borders;
+}
+
+function computeVisuals(board, overlays, solution) {
+  const count = board.cellCount;
+  const localBorders = computeBorders(board);
   const bg = new Array(count).fill(null);
-  const textColor = new Array(count).fill(null);
+  const badgeMap = new Array(count).fill(null);
   const markerMap = Array.from({ length: count }, () => []);
 
   for (const grid of board.grids) {
-    const boxId = (r, c) => {
-      if (grid.rule === 'irregular') return board.jigsawByGrid[grid.id][r * 9 + c];
-      return Math.floor(r / 3) * 3 + Math.floor(c / 3);
-    };
     const cageColors = grid.rule === 'killer' ? colorCages(board.cagesByGrid[grid.id]) : null;
 
     for (let r = 0; r < 9; r++) {
       for (let c = 0; c < 9; c++) {
         const local = r * 9 + c;
         const g = grid.cellIndex[local];
-        if (r === 0) localBorders[g].top = true;
-        if (c === 0) localBorders[g].left = true;
-        if (r === 8) localBorders[g].bottom = true;
-        if (c === 8) localBorders[g].right = true;
-        if (c < 8 && boxId(r, c) !== boxId(r, c + 1)) localBorders[g].right = true;
-        if (r < 8 && boxId(r, c) !== boxId(r + 1, c)) localBorders[g].bottom = true;
 
         if (grid.rule === 'killer') {
           const cageId = board.cagesByGrid[grid.id].findIndex((cage) => cage.includes(local));
@@ -143,25 +180,36 @@ function computeVisuals(board, overlays) {
         } else if (grid.rule === 'offset') {
           const posClass = (r % 3) * 3 + (c % 3);
           bg[g] = NAMED_PALETTE[posClass];
-        } else if (
-          grid.rule === 'x' &&
-          (r === c || r + c === 8) &&
-          board.cellOwners[g].length === 1
-        ) {
-          // Both diagonals get a red fill, except where the diagonal runs
-          // through the two boxes shared with "killer" and "offset" — the
-          // shared region is a whole 3x3 box, not just its one touching
-          // corner cell, and the diagonal crosses 3 cells of each (checked
-          // via actual cell ownership, not a guessed pair of coordinates).
-          // Deliberately not setting anything there (not even this grid's
-          // own flat color) lets whichever grid owns that box's special
-          // coloring (the killer/offset branches above, unconditional) win
-          // regardless of processing order.
-          bg[g] = DIAGONAL_FILL_COLOR;
         } else if (bg[g] === null) {
           bg[g] = GRID_COLORS[grid.rule];
         }
       }
+    }
+
+    if (grid.rule === 'killer') {
+      for (const cage of board.cagesByGrid[grid.id]) {
+        const first = cage.slice().sort((a, b) => a - b)[0];
+        const sum = cage.reduce((acc, li) => acc + solution[grid.cellIndex[li]], 0);
+        badgeMap[grid.cellIndex[first]] = String(sum);
+      }
+    }
+  }
+
+  // The X-sudoku diagonals are a thin line (not a fill) confined to this
+  // grid's own 81 cells, skipping any diagonal cell shared with "killer" or
+  // "offset" (the shared region is a whole 3x3 box, and the diagonal crosses
+  // 3 cells of each — checked via real ownership, not guessed coordinates) so
+  // the line never bleeds into, or fights the color of, a neighboring grid.
+  const diagonalLines = new Array(count).fill(null);
+  const xGrid = board.grids.find((g) => g.rule === 'x');
+  if (xGrid) {
+    for (let i = 0; i < 81; i++) {
+      const r = Math.floor(i / 9);
+      const c = i % 9;
+      const g = xGrid.cellIndex[i];
+      if (board.cellOwners[g].length > 1) continue;
+      if (r === c) diagonalLines[g] = 'main';
+      else if (r + c === 8) diagonalLines[g] = 'anti';
     }
   }
 
@@ -181,15 +229,14 @@ function computeVisuals(board, overlays) {
     else markerMap[a].push({ edge: 'bottom', type: 'sign', char: sign });
   }
 
-  // The sum rule: two blue addend cells plus one cell whose own solved digit
-  // equals their sum, shown by coloring the digit's text red — not a floating
-  // clue badge.
-  for (const { blue, red } of overlays.sumTriples) {
-    for (const cell of blue) bg[cell] = SUM_BLUE_COLOR;
-    textColor[red] = SUM_RED_TEXT_COLOR;
+  // The sum rule: 2-4 blue addend cells plus one red cell whose own solved
+  // digit equals their sum — colored fields only, no floating clue number.
+  for (const { blues, red } of overlays.sumGroups) {
+    for (const cell of blues) bg[cell] = SUM_BLUE_COLOR;
+    bg[red] = SUM_RED_COLOR;
   }
 
-  return { borders: localBorders, cellBackground: bg, textColor, markers: markerMap };
+  return { borders: localBorders, cellBackground: bg, badges: badgeMap, diagonalLines, markers: markerMap };
 }
 
 function buildBoardDom(board) {
@@ -286,10 +333,11 @@ function startGameFromResult(result, difficulty) {
   };
 
   buildBoardDom(board);
-  const visuals = computeVisuals(board, overlays);
+  const visuals = computeVisuals(board, overlays, solution);
   borders = visuals.borders;
   cellBackground = visuals.cellBackground;
-  cellTextColor = visuals.textColor;
+  badges = visuals.badges;
+  diagonalLines = visuals.diagonalLines;
   markers = visuals.markers;
 
   persistBoard();
@@ -373,10 +421,11 @@ function loadPersisted() {
     hintToggleInput.checked = !!state.hintEnabled;
 
     buildBoardDom(board);
-    const visuals = computeVisuals(board, overlays);
+    const visuals = computeVisuals(board, overlays, state.solution);
     borders = visuals.borders;
     cellBackground = visuals.cellBackground;
-    cellTextColor = visuals.textColor;
+    badges = visuals.badges;
+    diagonalLines = visuals.diagonalLines;
     markers = visuals.markers;
     return true;
   } catch {
@@ -530,11 +579,23 @@ function render() {
 
     el.className = 'cell scell';
     el.style.backgroundColor = cellBackground[i];
-    // A semi-transparent gray layered on top (not a filter on the color
-    // itself) so the cell's own color stays identifiable underneath.
-    el.style.backgroundImage = isDimmed
-      ? `linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`
-      : 'none';
+
+    // Layered background images: the hint-dimming gray (on top, so it stays
+    // visible even over the diagonal line) and/or the X-sudoku thin diagonal
+    // line, drawn as a narrow band across the cell rather than a solid fill
+    // so the cell's own color still shows through on either side of it.
+    const bgLayers = [];
+    if (isDimmed) bgLayers.push(`linear-gradient(${HINT_OVERLAY_COLOR}, ${HINT_OVERLAY_COLOR})`);
+    if (diagonalLines[i] === 'main') {
+      bgLayers.push(
+        `linear-gradient(to bottom right, transparent calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% + 1.5px), transparent calc(50% + 1.5px))`
+      );
+    } else if (diagonalLines[i] === 'anti') {
+      bgLayers.push(
+        `linear-gradient(to top right, transparent calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% - 1.5px), ${DIAGONAL_LINE_COLOR} calc(50% + 1.5px), transparent calc(50% + 1.5px))`
+      );
+    }
+    el.style.backgroundImage = bgLayers.length ? bgLayers.join(', ') : 'none';
 
     // Real borders (not box-shadow) so lines are continuous: `right`/`bottom`
     // always draw (thick at a boundary, thin otherwise), while `left`/`top`
@@ -549,11 +610,17 @@ function render() {
 
     el.innerHTML = '';
 
+    if (badges[i]) {
+      const badge = document.createElement('span');
+      badge.className = 'cage-badge';
+      badge.textContent = badges[i];
+      el.appendChild(badge);
+    }
+
     if (value !== 0) {
       const span = document.createElement('span');
       span.className = 'value';
       span.textContent = String(value);
-      if (cellTextColor[i]) span.style.color = cellTextColor[i];
       el.appendChild(span);
       if (state.given[i]) el.classList.add('given');
       if (!state.given[i] && value !== state.solution[i]) el.classList.add('error');
