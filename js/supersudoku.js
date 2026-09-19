@@ -175,20 +175,34 @@ function tryGenerateJigsaw(lockedBoxIds = []) {
   return region;
 }
 
-// Growth occasionally settles back into the plain 3x3 boxes it started from,
-// which would render as an ordinary grid and lose the variant entirely.
-function isPlainBoxes(region) {
-  return region.every((id, idx) => {
-    const r = Math.floor(idx / 9);
-    const c = idx % 9;
-    return id === Math.floor(r / 3) * 3 + Math.floor(c / 3);
-  });
+// Regions that came out as a plain 3x3 box. Growth leaves several of them by
+// chance, and a layout full of squares reads as an ordinary grid rather than a
+// jigsaw one. Two are already spoken for by the locked corners, so the cap
+// allows one more; about 63% of layouts pass, making the retry cheap.
+const MAX_PLAIN_SQUARES = 3;
+
+function plainSquareCount(region) {
+  const cellsById = Array.from({ length: 9 }, () => []);
+  region.forEach((id, idx) => cellsById[id].push(idx));
+
+  let count = 0;
+  for (const cells of cellsById) {
+    if (cells.length !== 9) continue;
+    const rows = cells.map((i) => Math.floor(i / 9));
+    const cols = cells.map((i) => i % 9);
+    const top = Math.min(...rows);
+    const left = Math.min(...cols);
+    if (top % 3 !== 0 || left % 3 !== 0) continue;
+    // 9 cells inside one aligned 3x3 window can only be that whole box.
+    if (rows.every((r) => r < top + 3) && cols.every((c) => c < left + 3)) count++;
+  }
+  return count;
 }
 
 export function generateJigsawRegions(lockedBoxIds = []) {
   for (let attempt = 0; attempt < 5000; attempt++) {
     const result = tryGenerateJigsaw(lockedBoxIds);
-    if (result && !isPlainBoxes(result)) return result;
+    if (result && plainSquareCount(result) <= MAX_PLAIN_SQUARES) return result;
   }
   throw new Error('Failed to generate jigsaw regions');
 }
