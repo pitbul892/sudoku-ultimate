@@ -81,6 +81,11 @@ body {
   min-width: 54px;
 }
 
+/* display above would otherwise win over the hidden attribute. */
+.stat[hidden] {
+  display: none;
+}
+
 .stat-label {
   font-size: 0.65rem;
   color: var(--text-dim);

@@ -14,6 +14,14 @@ const hintToggleInput = document.getElementById('hint-toggle');
 const winModal = document.getElementById('win-modal');
 const winTimeEl = document.getElementById('win-time');
 const playAgainBtn = document.getElementById('play-again');
+const errorToggleInput = document.getElementById('error-toggle');
+const mistakesStatEl = document.getElementById('mistakes-stat');
+const mistakesEl = document.getElementById('mistakes');
+const loseModal = document.getElementById('lose-modal');
+const loseTimeEl = document.getElementById('lose-time');
+const tryAgainBtn = document.getElementById('try-again');
+
+const MAX_MISTAKES = 5;
 
 /** @type {{
  *  puzzle: number[], solution: number[], grid: number[], given: boolean[],
@@ -31,6 +39,7 @@ function emptyNotes() {
 }
 
 function newGame(difficulty) {
+  hideModals();
   const { puzzle, solution } = generatePuzzle(difficulty);
   state = {
     puzzle,
@@ -44,6 +53,8 @@ function newGame(difficulty) {
     running: true,
     digitLens: null,
     hintEnabled: hintToggleInput.checked,
+    errorMode: errorToggleInput.checked,
+    mistakes: 0,
     history: [],
     difficulty,
     finished: false,
@@ -76,8 +87,11 @@ function loadPersisted() {
       ...parsed,
       notes: parsed.notes.map((arr) => new Set(arr)),
     };
+    state.errorMode = state.errorMode ?? true;
+    state.mistakes = state.mistakes ?? 0;
     difficultySelect.value = state.difficulty;
     hintToggleInput.checked = !!state.hintEnabled;
+    errorToggleInput.checked = state.errorMode;
     return true;
   } catch {
     return false;
@@ -152,10 +166,13 @@ function onCellClick(index) {
 }
 
 function pushHistory(index) {
+  // clearedNotes: cells OTHER than `index` whose notes the placement strips, so
+  // undo can put them back — they are not covered by prevNotes.
   state.history.push({
     index,
     prevValue: state.grid[index],
     prevNotes: [...state.notes[index]],
+    clearedNotes: null,
   });
   if (state.history.length > 200) state.history.shift();
 }
@@ -178,6 +195,15 @@ function onDigit(n) {
       state.grid[index] = 0;
     } else {
       state.grid[index] = n;
+      const wrong = n !== state.solution[index];
+      if (state.errorMode && wrong) state.mistakes += 1;
+      // A digit rules itself out of its peers' notes. With the error mode on a
+      // wrong digit is already flagged, so its notes are left alone rather than
+      // stripped on a premise the game knows to be false.
+      if (!(state.errorMode && wrong)) {
+        const cleared = clearNotesForPlacement(index, n);
+        if (cleared.length) state.history[state.history.length - 1].clearedNotes = { cells: cleared, digit: n };
+      }
     }
   }
 
@@ -202,17 +228,48 @@ function onErase() {
   render();
 }
 
+// Row, column and box of `index`: everywhere the placed digit is now illegal.
+function clearNotesForPlacement(index, n) {
+  const r = Math.floor(index / 9);
+  const c = index % 9;
+  const cleared = [];
+  const strip = (i) => { if (i !== index && state.notes[i].delete(n)) cleared.push(i); };
+  for (let k = 0; k < 9; k++) {
+    strip(r * 9 + k);
+    strip(k * 9 + c);
+  }
+  const br = Math.floor(r / 3) * 3;
+  const bc = Math.floor(c / 3) * 3;
+  for (let dr = 0; dr < 3; dr++) {
+    for (let dc = 0; dc < 3; dc++) strip((br + dr) * 9 + bc + dc);
+  }
+  return cleared;
+}
+
 function onUndo() {
   if (!state || state.finished || state.history.length === 0) return;
   const last = state.history.pop();
   state.grid[last.index] = last.prevValue;
   state.notes[last.index] = new Set(last.prevNotes);
+  if (last.clearedNotes) {
+    for (const cell of last.clearedNotes.cells) state.notes[cell].add(last.clearedNotes.digit);
+  }
   state.selected = last.index;
   persist();
   render();
 }
 
 function checkGameState() {
+  if (state.errorMode && state.mistakes >= MAX_MISTAKES) {
+    state.finished = true;
+    state.running = false;
+    stopTimer();
+    persist();
+    loseTimeEl.textContent = timerEl.textContent;
+    loseModal.classList.add('open');
+    return;
+  }
+
   const solved = state.grid.every((v, i) => v === state.solution[i]);
   if (solved) {
     state.finished = true;
@@ -226,10 +283,13 @@ function checkGameState() {
 
 function hideModals() {
   winModal.classList.remove('open');
+  loseModal.classList.remove('open');
 }
 
 function render() {
   if (!state) return;
+  mistakesStatEl.hidden = !state.errorMode;
+  mistakesEl.textContent = `${state.mistakes} / ${MAX_MISTAKES}`;
 
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
@@ -269,7 +329,7 @@ function render() {
       span.textContent = String(value);
       cellEl.appendChild(span);
       if (state.given[i]) cellEl.classList.add('given');
-      if (!state.given[i] && value !== state.solution[i]) cellEl.classList.add('error');
+      if (state.errorMode && !state.given[i] && value !== state.solution[i]) cellEl.classList.add('error');
     } else if (state.notes[i].size > 0) {
       const notesGrid = document.createElement('div');
       notesGrid.className = 'notes';
@@ -355,6 +415,18 @@ hintToggleInput.addEventListener('change', () => {
 playAgainBtn.addEventListener('click', () => {
   hideModals();
   newGame(difficultySelect.value);
+});
+
+tryAgainBtn.addEventListener('click', () => {
+  hideModals();
+  newGame(difficultySelect.value);
+});
+
+errorToggleInput.addEventListener('change', () => {
+  if (!state) return;
+  state.errorMode = errorToggleInput.checked;
+  persist();
+  render();
 });
 
 document.addEventListener('keydown', onKeydown);

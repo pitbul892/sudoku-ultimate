@@ -20,6 +20,10 @@
         <span class="stat-label">Время</span>
         <span id="timer" class="stat-value">00:00</span>
       </div>
+      <div class="stat" id="mistakes-stat">
+        <span class="stat-label">Ошибки</span>
+        <span id="mistakes" class="stat-value">0 / 5</span>
+      </div>
     </div>
   </header>
 
@@ -56,6 +60,17 @@
       <p>Когда включено — нажмите на уже поставленную цифру, и клетки, куда её нельзя поставить, затемнятся.</p>
     </div>
   </div>
+
+  <div class="hint-panel">
+    <label class="switch">
+      <input type="checkbox" id="error-toggle" checked />
+      <span class="slider"></span>
+    </label>
+    <div class="hint-text">
+      <strong>Режим ошибок</strong>
+      <p>Когда включено — неверные цифры подсвечиваются, и на пятой ошибке игра проиграна. Когда выключено — ошибки не видны, но поставленная цифра всегда вычищается из заметок соседних клеток.</p>
+    </div>
+  </div>
 </div>
 
 <div id="win-modal" class="modal">
@@ -64,6 +79,15 @@
     <p>Судоку решено верно.</p>
     <p>Время: <span id="win-time"></span></p>
     <button id="play-again" class="btn primary">Играть ещё раз</button>
+  </div>
+</div>
+
+<div id="lose-modal" class="modal">
+  <div class="modal-card">
+    <h2>Игра окончена</h2>
+    <p>Набралось 5 ошибок.</p>
+    <p>Время: <span id="lose-time"></span></p>
+    <button id="try-again" class="btn primary">Новая игра</button>
   </div>
 </div>
 

@@ -41,6 +41,7 @@ const BORDER_COLOR = '#4f46e5';
 // Its own colour rather than --border, which is the light tint used for panel
 // edges and is too faint to separate cells against a filled background.
 const THIN_LINE_COLOR = '#b6bccf';
+const MAX_MISTAKES = 5;
 const THIN_W = 0.05;
 const THICK_W = 0.12;
 // Painted over the cell fills, bottom to top. The marker and content values are
@@ -69,6 +70,12 @@ const hintToggleInput = document.getElementById('hint-toggle');
 const winModal = document.getElementById('win-modal');
 const winTimeEl = document.getElementById('win-time');
 const playAgainBtn = document.getElementById('play-again');
+const errorToggleInput = document.getElementById('error-toggle');
+const mistakesStatEl = document.getElementById('mistakes-stat');
+const mistakesEl = document.getElementById('mistakes');
+const loseModal = document.getElementById('lose-modal');
+const loseTimeEl = document.getElementById('lose-time');
+const tryAgainBtn = document.getElementById('try-again');
 const revealSolutionBtn = document.getElementById('reveal-solution');
 const legendList = document.getElementById('legend-list');
 
@@ -491,6 +498,7 @@ function ensureWorker() {
 }
 
 function newGame(difficulty) {
+  loseModal.classList.remove('open');
   setLoading(true, 'Генерация судоку… это может занять до 10 секунд.');
   stopTimer();
   const w = ensureWorker();
@@ -525,6 +533,8 @@ function startGameFromResult(result, difficulty) {
     running: true,
     lensCell: null,
     hintEnabled: hintToggleInput.checked,
+    errorMode: errorToggleInput.checked,
+    mistakes: 0,
     history: [],
     difficulty,
     finished: false,
@@ -579,6 +589,8 @@ function persistProgress() {
         seconds: state.seconds,
         lensCell: state.lensCell,
         hintEnabled: state.hintEnabled,
+        errorMode: state.errorMode,
+        mistakes: state.mistakes,
         history: state.history,
         difficulty: state.difficulty,
         finished: state.finished,
@@ -613,8 +625,11 @@ function loadPersisted() {
       ...progress,
       notes: progress.notes.map((arr) => new Set(arr)),
     };
+    state.errorMode = state.errorMode ?? true;
+    state.mistakes = state.mistakes ?? 0;
     difficultySelect.value = state.difficulty;
     hintToggleInput.checked = !!state.hintEnabled;
+    errorToggleInput.checked = state.errorMode;
 
     const visuals = computeVisuals(board, overlays, state.solution);
     buildBoardDom(board, visuals);
@@ -659,7 +674,14 @@ function onCellClick(index) {
 }
 
 function pushHistory(index) {
-  state.history.push({ index, prevValue: state.grid[index], prevNotes: [...state.notes[index]] });
+  // clearedNotes: cells OTHER than `index` whose notes the placement strips, so
+  // undo can put them back — they are not covered by prevNotes.
+  state.history.push({
+    index,
+    prevValue: state.grid[index],
+    prevNotes: [...state.notes[index]],
+    clearedNotes: null,
+  });
   if (state.history.length > 400) state.history.shift();
 }
 
@@ -681,6 +703,18 @@ function onDigit(n) {
       state.grid[index] = 0;
     } else {
       state.grid[index] = n;
+      const wrong = n !== state.solution[index];
+      if (state.errorMode && wrong) state.mistakes += 1;
+      // A digit rules itself out of its peers' notes. With the error mode on a
+      // wrong digit is already flagged, so its notes are left alone rather than
+      // stripped on a premise the game knows to be false.
+      if (!(state.errorMode && wrong)) {
+        const cleared = [];
+        for (const peer of state.board.peers[index]) {
+          if (state.notes[peer].delete(n)) cleared.push(peer);
+        }
+        if (cleared.length) state.history[state.history.length - 1].clearedNotes = { cells: cleared, digit: n };
+      }
     }
   }
 
@@ -705,12 +739,25 @@ function onUndo() {
   const last = state.history.pop();
   state.grid[last.index] = last.prevValue;
   state.notes[last.index] = new Set(last.prevNotes);
+  if (last.clearedNotes) {
+    for (const cell of last.clearedNotes.cells) state.notes[cell].add(last.clearedNotes.digit);
+  }
   state.selected = last.index;
   persistProgress();
   render();
 }
 
 function checkGameState() {
+  if (state.errorMode && state.mistakes >= MAX_MISTAKES) {
+    state.finished = true;
+    state.running = false;
+    stopTimer();
+    persistProgress();
+    loseTimeEl.textContent = timerEl.textContent;
+    loseModal.classList.add('open');
+    return;
+  }
+
   const solved = state.grid.every((v, i) => v === state.solution[i]);
   if (solved) {
     state.finished = true;
@@ -735,6 +782,8 @@ function render() {
   if (!state || !cellButtons) return;
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
+  mistakesStatEl.hidden = !state.errorMode;
+  mistakesEl.textContent = `${state.mistakes} / ${MAX_MISTAKES}`;
 
   // != null also absorbs a progress save written before the lens moved from
   // digit to cell, where this field is missing.
@@ -783,7 +832,7 @@ function render() {
       span.textContent = String(value);
       el.appendChild(span);
       if (state.given[i]) el.classList.add('given');
-      if (!state.given[i] && value !== state.solution[i]) el.classList.add('error');
+      if (state.errorMode && !state.given[i] && value !== state.solution[i]) el.classList.add('error');
     } else if (state.notes[i].size > 0) {
       const notesGrid = document.createElement('div');
       notesGrid.className = 'notes';
@@ -849,6 +898,16 @@ hintToggleInput.addEventListener('change', () => {
 playAgainBtn.addEventListener('click', () => {
   winModal.classList.remove('open');
   newGame(difficultySelect.value);
+});
+tryAgainBtn.addEventListener('click', () => {
+  loseModal.classList.remove('open');
+  newGame(difficultySelect.value);
+});
+errorToggleInput.addEventListener('change', () => {
+  if (!state) return;
+  state.errorMode = errorToggleInput.checked;
+  persistProgress();
+  render();
 });
 revealSolutionBtn.addEventListener('click', onRevealSolution);
 document.addEventListener('keydown', onKeydown);
