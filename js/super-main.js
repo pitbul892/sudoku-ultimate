@@ -1,4 +1,5 @@
 import { GRID_DEFS, unavailableCellsForCell } from './supersudoku.js';
+import { startFireworks, stopFireworks } from './fireworks.js';
 
 // Board/overlays/solution are only written once per game (large payload); the
 // frequently-changing progress (grid, notes, timer, ...) is written separately
@@ -76,6 +77,7 @@ const mistakesEl = document.getElementById('mistakes');
 const loseModal = document.getElementById('lose-modal');
 const loseTimeEl = document.getElementById('lose-time');
 const tryAgainBtn = document.getElementById('try-again');
+const fireworksCanvas = document.getElementById('fireworks');
 const checkBtn = document.getElementById('check');
 const forceWinBtn = document.getElementById('force-win');
 const revealSolutionBtn = document.getElementById('reveal-solution');
@@ -502,6 +504,8 @@ function ensureWorker() {
 }
 
 function newGame(difficulty) {
+  stopFireworks();
+  winModal.classList.remove('open');
   loseModal.classList.remove('open');
   setLoading(true, 'Генерация судоку… это может занять до 10 секунд.');
   stopTimer();
@@ -780,6 +784,9 @@ function checkGameState() {
     persistProgress();
     winTimeEl.textContent = timerEl.textContent;
     winModal.classList.add('open');
+    // After .open: the modal is display:none until then, so the canvas would
+    // size itself to zero.
+    startFireworks(fireworksCanvas);
   }
 }
 
@@ -913,6 +920,7 @@ hintToggleInput.addEventListener('change', () => {
   render();
 });
 playAgainBtn.addEventListener('click', () => {
+  stopFireworks();
   winModal.classList.remove('open');
   newGame(difficultySelect.value);
 });

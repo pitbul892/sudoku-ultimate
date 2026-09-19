@@ -1,4 +1,5 @@
 import { generatePuzzle, unavailableCellsForValue, boxIndex } from './sudoku.js';
+import { startFireworks, stopFireworks } from './fireworks.js';
 
 const STORAGE_KEY = 'sudoku-ultimate-state-v1';
 
@@ -20,6 +21,7 @@ const mistakesEl = document.getElementById('mistakes');
 const loseModal = document.getElementById('lose-modal');
 const loseTimeEl = document.getElementById('lose-time');
 const tryAgainBtn = document.getElementById('try-again');
+const fireworksCanvas = document.getElementById('fireworks');
 const checkBtn = document.getElementById('check');
 const forceWinBtn = document.getElementById('force-win');
 
@@ -292,10 +294,14 @@ function checkGameState() {
     persist();
     winTimeEl.textContent = timerEl.textContent;
     winModal.classList.add('open');
+    // After .open: the modal is display:none until then, so the canvas would
+    // size itself to zero.
+    startFireworks(fireworksCanvas);
   }
 }
 
 function hideModals() {
+  stopFireworks();
   winModal.classList.remove('open');
   loseModal.classList.remove('open');
 }
