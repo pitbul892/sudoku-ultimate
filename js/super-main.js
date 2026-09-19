@@ -650,14 +650,10 @@ function updateTimerDisplay() {
 
 function onCellClick(index) {
   if (!state || state.finished) return;
-  const value = state.grid[index];
-  if (state.hintEnabled && value !== 0) {
-    // Toggle the "unavailable cells" lens for this cell on/off.
-    state.lensCell = state.lensCell === index ? null : index;
-    state.selected = index;
-    render();
-    return;
-  }
+  // Toggle the "unavailable cells" lens for this cell on/off. An empty cell
+  // gets one too: its row, column and block are what a digit placed there
+  // would rule out.
+  if (state.hintEnabled) state.lensCell = state.lensCell === index ? null : index;
   state.selected = index;
   render();
 }
@@ -740,13 +736,9 @@ function render() {
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
-  // The lens is anchored to a placed digit, so it is closed whenever its cell
-  // holds none — covers erase and undo as well as overtyping, and a progress
-  // save from before the lens moved from digit to cell. Derived rather than
-  // cleared, so undoing the erase brings the lens back.
-  const lensCell = state.hintEnabled && state.lensCell != null && state.grid[state.lensCell] !== 0
-    ? state.lensCell
-    : null;
+  // != null also absorbs a progress save written before the lens moved from
+  // digit to cell, where this field is missing.
+  const lensCell = state.hintEnabled && state.lensCell != null ? state.lensCell : null;
 
   let unavailable = new Set();
   let sources = new Set();

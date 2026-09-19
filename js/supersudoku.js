@@ -797,10 +797,11 @@ export function computeOverlays(board, bySolution) {
 // the solver but too indirect to read as a hint, so they stay out.
 const LENS_GROUP_TYPES = new Set(['row', 'col', 'box', 'diagonal']);
 
-// What the digit in one placed cell rules out: its row, column and block, plus
-// every other cell already showing that same digit — all within the grids that
-// own the cell, so one on the seam between two puzzles covers both. Filled cells
-// are included, so a digit sitting where this one cannot go is shown too.
+// What one cell rules out: its row, column and block, plus every other cell
+// already showing its digit — all within the grids that own the cell, so one on
+// the seam between two puzzles covers both. Filled cells are included, so a
+// digit sitting where this one cannot go is shown too. An empty cell has no
+// digit to match, leaving just its row, column and block.
 export function unavailableCellsForCell(board, grid, index) {
   const unavailable = new Set();
   for (const group of board.cellGroups[index]) {
