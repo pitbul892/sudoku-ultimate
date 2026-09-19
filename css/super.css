@@ -125,10 +125,9 @@
   pointer-events: none;
 }
 
-.debug-btn {
-  border-style: dashed;
-  color: var(--text-dim);
-  font-size: 0.75rem;
+/* Above every overlay, so the check outline is not cut by a grid line. */
+.scell.check-empty {
+  z-index: 7;
 }
 
 .edge-marker {

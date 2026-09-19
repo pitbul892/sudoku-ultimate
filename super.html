@@ -63,6 +63,7 @@
     <button id="undo" class="btn" title="Отменить">↺ Отменить</button>
     <button id="erase" class="btn" title="Стереть">⌫ Стереть</button>
     <button id="notes-toggle" class="btn" title="Режим заметок">✎ Заметки</button>
+    <button id="check" class="btn" title="Проверить судоку">✓ Проверить</button>
   </div>
 
   <div id="numpad" class="numpad"></div>
@@ -89,7 +90,10 @@
     </div>
   </div>
 
-  <button id="reveal-solution" class="btn debug-btn" type="button">🛠 Показать решение (для проверки, без победы)</button>
+  <div class="debug-row">
+    <button id="reveal-solution" class="btn debug-btn" type="button">🛠 Показать решение (для проверки, без победы)</button>
+    <button id="force-win" class="btn debug-btn" type="button">🏆 Победа (для проверки итога)</button>
+  </div>
 </div>
 
 <div id="win-modal" class="modal">

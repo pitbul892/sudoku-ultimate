@@ -76,6 +76,8 @@ const mistakesEl = document.getElementById('mistakes');
 const loseModal = document.getElementById('lose-modal');
 const loseTimeEl = document.getElementById('lose-time');
 const tryAgainBtn = document.getElementById('try-again');
+const checkBtn = document.getElementById('check');
+const forceWinBtn = document.getElementById('force-win');
 const revealSolutionBtn = document.getElementById('reveal-solution');
 const legendList = document.getElementById('legend-list');
 
@@ -94,6 +96,8 @@ GRID_DEFS.forEach((def, i) => {
 let worker = null;
 let state = null;
 let timerHandle = null;
+let timerBase = 0; // state.seconds when the current run started
+let timerStart = 0; // Date.now() at that moment
 let cellButtons = null; // global cell index -> button element
 let borders = null; // global cell index -> {top,right,bottom,left}
 let cellBackground = null; // global cell index -> css color
@@ -535,6 +539,7 @@ function startGameFromResult(result, difficulty) {
     hintEnabled: hintToggleInput.checked,
     errorMode: errorToggleInput.checked,
     mistakes: 0,
+    checking: false,
     history: [],
     difficulty,
     finished: false,
@@ -646,9 +651,16 @@ function loadPersisted() {
 
 function startTimer() {
   stopTimer();
+  timerBase = state.seconds;
+  timerStart = Date.now();
   timerHandle = setInterval(() => {
     if (!state || !state.running || state.finished) return;
-    state.seconds++;
+    // Elapsed wall time rather than a count of ticks: a browser throttles timers
+    // in a background tab, so counting ticks let the clock fall behind and look
+    // stuck. Reading the clock makes every dropped tick correct itself.
+    const seconds = timerBase + Math.round((Date.now() - timerStart) / 1000);
+    if (seconds === state.seconds) return;
+    state.seconds = seconds;
     updateTimerDisplay();
     persistProgress();
   }, 1000);
@@ -690,6 +702,7 @@ function onDigit(n) {
   const index = state.selected;
   if (state.given[index]) return;
 
+  state.checking = false;
   pushHistory(index);
 
   if (state.notesMode) {
@@ -727,6 +740,7 @@ function onErase() {
   if (!state || state.finished || state.selected === null) return;
   const index = state.selected;
   if (state.given[index]) return;
+  state.checking = false;
   pushHistory(index);
   state.grid[index] = 0;
   state.notes[index].clear();
@@ -851,6 +865,9 @@ function render() {
       el.appendChild(m);
     }
 
+    // Empty cells the player still owes, shown on demand by the check button.
+    if (state.checking && value === 0) el.classList.add('check-empty');
+
     if (selIndex !== null) {
       if (i === selIndex) el.classList.add('selected');
       else if (peerSet.has(i)) el.classList.add('peer');
@@ -903,6 +920,22 @@ tryAgainBtn.addEventListener('click', () => {
   loseModal.classList.remove('open');
   newGame(difficultySelect.value);
 });
+checkBtn.addEventListener('click', () => {
+  if (!state || state.finished) return;
+  // Transient: the next board change clears it, so it never goes stale.
+  state.checking = true;
+  render();
+});
+
+forceWinBtn.addEventListener('click', () => {
+  if (!state) return;
+  state.grid = state.solution.slice();
+  state.checking = false;
+  checkGameState();
+  persistProgress();
+  render();
+});
+
 errorToggleInput.addEventListener('change', () => {
   if (!state) return;
   state.errorMode = errorToggleInput.checked;

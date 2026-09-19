@@ -261,6 +261,27 @@ body {
   flex: 1;
 }
 
+/* Shared by both boards; the super board is not the only one with debug aids. */
+.debug-row {
+  display: flex;
+  gap: 8px;
+}
+
+.debug-btn {
+  flex: 1;
+  border-style: dashed;
+  color: var(--text-dim);
+  font-size: 0.75rem;
+}
+
+/* "Check": what is still missing when the board looks finished but isn't. */
+.cell.check-empty {
+  outline: 2px solid var(--error);
+  outline-offset: -2px;
+  z-index: 4;
+}
+
+
 .numpad {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
