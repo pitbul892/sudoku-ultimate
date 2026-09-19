@@ -790,19 +790,29 @@ export function computeOverlays(board, bySolution) {
   return { consecutiveEdges, comparisonSigns, sumGroups: sumGroupsForRender };
 }
 
-// Returns, for a given digit, the set of empty global cell indices where it can no
-// longer legally be placed (peer of some cell already containing it), plus the set
-// of "source" cells that currently hold it.
+// The lens reads the plain sudoku groups only: a cell's row, column and block
+// within each grid that owns it. A grid's "box" group is already its own shape,
+// so the jigsaw grid contributes its curved block here rather than a 3x3 square,
+// and the X grid's two diagonals join in as groups of their own. Cages and the
+// offset grid's position classes are real constraints for the solver but too
+// indirect to read as a hint, so they stay out.
+const LENS_GROUP_TYPES = new Set(['row', 'col', 'box', 'diagonal']);
+
+// Returns, for a given digit, the global cell indices where it can no longer be
+// placed — filled ones included, so a wrong digit sitting in such a cell is
+// shown too — plus the "source" cells that currently hold it.
 export function unavailableCellsForValue(board, grid, value) {
   const sources = [];
   for (let i = 0; i < board.cellCount; i++) if (grid[i] === value) sources.push(i);
 
   const unavailable = new Set();
   for (const sourceIndex of sources) {
-    for (const p of board.peers[sourceIndex]) {
-      if (grid[p] === 0) unavailable.add(p);
+    for (const group of board.cellGroups[sourceIndex]) {
+      if (!LENS_GROUP_TYPES.has(group.type)) continue;
+      for (const cell of group.cells) unavailable.add(cell);
     }
   }
+  for (const s of sources) unavailable.delete(s);
   return { unavailable, sources: new Set(sources) };
 }
 

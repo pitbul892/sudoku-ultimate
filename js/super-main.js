@@ -744,9 +744,6 @@ function render() {
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
-  // The hint lens is scoped to the single grid the clicked cell belongs to
-  // (its row/col/box/etc. groups only), and marks every peer — filled or
-  // empty — as unavailable, not just empty cells.
   let unavailable = new Set();
   let sources = new Set();
   if (state.hintEnabled && state.digitLens !== null) {
