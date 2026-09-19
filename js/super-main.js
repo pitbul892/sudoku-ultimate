@@ -1,4 +1,4 @@
-import { GRID_DEFS, unavailableCellsForValue } from './supersudoku.js';
+import { GRID_DEFS, unavailableCellsForCell } from './supersudoku.js';
 
 // Board/overlays/solution are only written once per game (large payload); the
 // frequently-changing progress (grid, notes, timer, ...) is written separately
@@ -523,7 +523,7 @@ function startGameFromResult(result, difficulty) {
     notesMode: false,
     seconds: 0,
     running: true,
-    digitLens: null,
+    lensCell: null,
     hintEnabled: hintToggleInput.checked,
     history: [],
     difficulty,
@@ -577,7 +577,7 @@ function persistProgress() {
         selected: state.selected,
         notesMode: state.notesMode,
         seconds: state.seconds,
-        digitLens: state.digitLens,
+        lensCell: state.lensCell,
         hintEnabled: state.hintEnabled,
         history: state.history,
         difficulty: state.difficulty,
@@ -652,8 +652,8 @@ function onCellClick(index) {
   if (!state || state.finished) return;
   const value = state.grid[index];
   if (state.hintEnabled && value !== 0) {
-    // Toggle the "unavailable cells" lens for this digit on/off.
-    state.digitLens = state.digitLens === value ? null : value;
+    // Toggle the "unavailable cells" lens for this cell on/off.
+    state.lensCell = state.lensCell === index ? null : index;
     state.selected = index;
     render();
     return;
@@ -686,10 +686,6 @@ function onDigit(n) {
     } else {
       state.grid[index] = n;
     }
-  }
-
-  if (state.hintEnabled && state.digitLens !== null) {
-    state.digitLens = state.grid[index] || state.digitLens;
   }
 
   checkGameState();
@@ -744,10 +740,18 @@ function render() {
   updateTimerDisplay();
   notesToggleBtn.classList.toggle('active', state.notesMode);
 
+  // The lens is anchored to a placed digit, so it is closed whenever its cell
+  // holds none — covers erase and undo as well as overtyping, and a progress
+  // save from before the lens moved from digit to cell. Derived rather than
+  // cleared, so undoing the erase brings the lens back.
+  const lensCell = state.hintEnabled && state.lensCell != null && state.grid[state.lensCell] !== 0
+    ? state.lensCell
+    : null;
+
   let unavailable = new Set();
   let sources = new Set();
-  if (state.hintEnabled && state.digitLens !== null) {
-    const result = unavailableCellsForValue(state.board, state.grid, state.digitLens);
+  if (lensCell !== null) {
+    const result = unavailableCellsForCell(state.board, lensCell);
     unavailable = result.unavailable;
     sources = result.sources;
   }
@@ -812,7 +816,7 @@ function render() {
       if (selValue !== 0 && value === selValue) el.classList.add('same-value');
     }
 
-    if (state.hintEnabled && state.digitLens !== null) {
+    if (lensCell !== null) {
       if (sources.has(i)) el.classList.add('lens-source');
       else if (isDimmed) el.classList.add('dimmed');
     }
@@ -846,7 +850,7 @@ notesToggleBtn.addEventListener('click', () => {
 hintToggleInput.addEventListener('change', () => {
   if (!state) return;
   state.hintEnabled = hintToggleInput.checked;
-  if (!state.hintEnabled) state.digitLens = null;
+  if (!state.hintEnabled) state.lensCell = null;
   persistProgress();
   render();
 });
