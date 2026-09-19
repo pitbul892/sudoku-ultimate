@@ -797,16 +797,28 @@ export function computeOverlays(board, bySolution) {
 // the solver but too indirect to read as a hint, so they stay out.
 const LENS_GROUP_TYPES = new Set(['row', 'col', 'box', 'diagonal']);
 
-// What the digit in one placed cell rules out: its row, column and block, in
-// every grid that owns it — a cell on the seam between two puzzles constrains
-// both. Filled cells are included, so a digit already sitting where this one
-// cannot go is shown rather than skipped.
-export function unavailableCellsForCell(board, index) {
+// What the digit in one placed cell rules out: its row, column and block, plus
+// every other cell already showing that same digit — all within the grids that
+// own the cell, so one on the seam between two puzzles covers both. Filled cells
+// are included, so a digit sitting where this one cannot go is shown too.
+export function unavailableCellsForCell(board, grid, index) {
   const unavailable = new Set();
   for (const group of board.cellGroups[index]) {
     if (!LENS_GROUP_TYPES.has(group.type)) continue;
     for (const cell of group.cells) unavailable.add(cell);
   }
+
+  const value = grid[index];
+  if (value !== 0) {
+    const owners = new Set(board.cellOwners[index].map((o) => o.gridId));
+    for (const g of board.grids) {
+      if (!owners.has(g.id)) continue;
+      for (const cell of g.cellIndex) {
+        if (grid[cell] === value) unavailable.add(cell);
+      }
+    }
+  }
+
   unavailable.delete(index);
   return { unavailable, sources: new Set([index]) };
 }

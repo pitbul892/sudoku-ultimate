@@ -751,7 +751,7 @@ function render() {
   let unavailable = new Set();
   let sources = new Set();
   if (lensCell !== null) {
-    const result = unavailableCellsForCell(state.board, lensCell);
+    const result = unavailableCellsForCell(state.board, state.grid, lensCell);
     unavailable = result.unavailable;
     sources = result.sources;
   }
