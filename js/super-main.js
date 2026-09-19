@@ -41,7 +41,7 @@ const BORDER_COLOR = '#4f46e5';
 // Its own colour rather than --border, which is the light tint used for panel
 // edges and is too faint to separate cells against a filled background.
 const THIN_LINE_COLOR = '#b6bccf';
-const MAX_MISTAKES = 5;
+const MAX_MISTAKES = 10;
 const THIN_W = 0.05;
 const THICK_W = 0.12;
 // Painted over the cell fills, bottom to top. The marker and content values are

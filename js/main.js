@@ -21,7 +21,7 @@ const loseModal = document.getElementById('lose-modal');
 const loseTimeEl = document.getElementById('lose-time');
 const tryAgainBtn = document.getElementById('try-again');
 
-const MAX_MISTAKES = 5;
+const MAX_MISTAKES = 10;
 
 /** @type {{
  *  puzzle: number[], solution: number[], grid: number[], given: boolean[],
