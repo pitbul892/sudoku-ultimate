@@ -169,9 +169,6 @@
   justify-content: center;
   width: 1.2em;
   height: 1.2em;
-  /* The sign sits on top of a grid line, sometimes a thick block border. */
-  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff;
-  z-index: 3;
 }
 
 .marker-right.sign {

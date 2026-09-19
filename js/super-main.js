@@ -22,21 +22,20 @@ const GRID_COLORS = {
 // purple — used both for the offset grid's position classes and (per its own
 // rule) reused for the killer grid's cages, with adjacency-safe assignment so
 // two touching cages never get the same color.
+// Alpha is high enough that a cell still reads as its own colour where it is
+// painted over the thick blue border, while leaving the border visible.
 const NAMED_PALETTE = [
-  'rgba(234,179,8,0.35)', 'rgba(156,163,175,0.40)', 'rgba(249,115,22,0.35)',
-  'rgba(236,72,153,0.30)', 'rgba(163,230,53,0.40)', 'rgba(146,64,14,0.28)',
-  // The "white" slot is fully transparent rather than #ffffff: the board behind
-  // it is already white, and an opaque fill would hide the grid lines, which are
-  // drawn underneath the cells so block colours carry across them.
-  'rgba(34,197,94,0.32)', 'rgba(255,255,255,0)', 'rgba(168,85,247,0.30)',
+  'rgba(234,179,8,0.50)', 'rgba(156,163,175,0.55)', 'rgba(249,115,22,0.50)',
+  'rgba(236,72,153,0.45)', 'rgba(163,230,53,0.55)', 'rgba(146,64,14,0.42)',
+  'rgba(34,197,94,0.48)', 'rgba(255,255,255,0.55)', 'rgba(168,85,247,0.45)',
 ];
-const SUM_BLUE_COLOR = 'rgba(59,130,246,0.40)'; // the addend cells
-const SUM_RED_COLOR = 'rgba(220,38,38,0.40)'; // the sum cell — a colored field, not a revealed number
+const SUM_BLUE_COLOR = 'rgba(59,130,246,0.55)'; // the addend cells
+const SUM_RED_COLOR = 'rgba(220,38,38,0.55)'; // the sum cell — a colored field, not a revealed number
 const DIAGONAL_LINE_COLOR = '#dc2626';
 // Fill for the cells the diagonals run through. Only applied where the X grid
 // owns the cell alone: in a box it shares with another grid this would read as
 // that grid's own marking.
-const X_DIAGONAL_CELL_COLOR = 'rgba(220,38,38,0.28)';
+const X_DIAGONAL_CELL_COLOR = 'rgba(220,38,38,0.40)';
 const HINT_OVERLAY_COLOR = 'rgba(90,95,110,0.55)'; // semi-transparent, keeps the base color visible
 const BORDER_COLOR = '#4f46e5';
 // Its own colour rather than --border, which is the light tint used for panel
